@@ -4,10 +4,10 @@
         * online_time_total
     * 指标含义
         * 单个用户访问的总时长，以小时或者天作为单位。
-    * 计算公式        
-        ```lua
+    * 计算公式   
+    ```lua
         online_time_total = online_time_total + session_time
-        ```
+    ```
 * **用户最近一周的在线时长** 
     * 指标名称
         * week_online_time_total

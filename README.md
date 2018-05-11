@@ -28,11 +28,11 @@
     * 计算公式
         * 方法: 用户最近一周在线时长 / 七天
         * ```day_avg_online_time = week_online_time_total / 7```
-* **用户最近一周的有效访问次数**
+* **用户最近一周的访问次数**
     * 指标名称
         * week_access_count
     * 指标含义
-        * 用户近一周的有效访问次数，ES中bytes_sent > 0 的访问为一次有效访问。访问次数越多，表示用户更活跃。
+        * 用户近一周的访问次数。访问次数越多，表示用户更活跃。
     * 计算公式
         ```
         if bytes_sent > 0 then
@@ -47,21 +47,6 @@
     * 计算公式
         * 方法： 一周的有效访问量 / 一周7天
         * ```day_avg_access_count = week_access_count_total / 7```
-* **用户最近一周的有效访问流量**
-    * 指标名称
-        * week_bytes_sent
-    * 指标含义
-        * 有效访问流量指源站返回给用户的流量，对于防护节点来说，这个流量越大，表示用户越活跃。
-    * 计算公式
-        * ```week_bytes_sent = week_bytes_sent + bytes_sent```
-* **用户最近一周的日均有效访问流量**
-    * 指标名称
-        * day_avg_bytes_sent
-    * 指标含义
-        * 日均有效访问流量指，最近一周源站返回给用户的日均流量，对于防护节点来说，日均流量越高，表示用户越活跃。
-    * 计算公式
-        * 方法: 一周的有效流量 / 一周七天
-        * ```day_avg_bytes_sent = week_bytes_sent / 7```
 * **同一accessKey下，不同设备指纹使用的回源端口个数**
     * 指标名称
         * target_port_num
@@ -80,7 +65,7 @@
     ```weight_week_online_days = 3```
     * 用户总的在线时长， **权重为 1**    
     ```weight_online_time_total = 1```
-    * 最近一周的日均有效访问次数， **权重为 1**    
+    * 最近一周的日均访问次数， **权重为 1**    
     ```weight_day_avg_access_count = 1```
     * 最近一周的有效访问次数， **权重为 2**   
     ```weight_week_access_count = 2```
@@ -110,19 +95,19 @@
         ```score_week_online_days = week_online_days / 7 * 100```
         * 用户总的在线时长   
         ```   
-        ONLINE_TIME_TOTAL = DAY_AVG_ONLINE_TIME * 365
+        ONLINE_TIME_TOTAL = DAY_AVG_ONLINE_TIME * (从起始记录当前日志到现在经过的天数)
         online_time_total_ratio = online_time_total / ONLINE_TIME_TOTAL
         if online_time_total_ratio > 1 then   
             online_time_total_ratio = 1   
         end
-        score_online_time_total = online_time_total_ratio * 100   
+        score_online_time_total = online_time_total_ratio * 100
         ```
         * 用户最近一周的日均有效访问次数   
         ```   
         DAY_ACCESS_COUNT = 100
         day_avg_access_count_ratio = day_avg_access_count / DAY_ACCESS_COUNT   
-        if day_avg_access_count_ratio > 1 then   
-            day_avg_access_count_ratio = 1   
+        if day_avg_access_count_ratio > 1 then
+            day_avg_access_count_ratio = 1
         end
         score_day_avg_access_count = day_avg_access_count_ratio * 100   
         ```   
@@ -157,6 +142,4 @@
                 score_target_port_num * weight_target_port_num   
         ```     
     
-    * 系统设计   
-    &emsp; 根据起始时间，例如2017-05-02, 默认的终止时间为程序启动的日期（2018-05-02）。用户活跃度评价程序从2017-05-02开始，滚动查询ES每天的日志，根据每天的日志信息更新用户的活跃度评分。   
-    &emsp; 起始日期到程序启动日期之间的历史日志数据跑完以后，程序创建crontab任务，之后每隔一段时间（例如3小时）进行用户活跃度的评价。
+### 系统设计   

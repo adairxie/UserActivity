@@ -74,40 +74,40 @@
 
 ### 用户活跃程度评价方法
 * 用户活跃程度评价的各权重因子，权重由高至低暂定为以下顺序：
-    * 最近一周的日均在线时长， **权重为 3**     
+    * 最近一周的日均在线时长， **权重为 2**     
     
     ```lua
-        weight_day_avg_online_time = 3
+        weight_day_avg_online_time = 2
     ```
-    * 最近一周的在线时长， **权重为 2**   
+    * 最近一周的在线时长， **权重为 3**   
     
     ```lua
         weight_week_online_time_total = 2
     ```
-    * 用户最近一周的在线天数， **权重为 3**    
+    * 用户最近一周的在线天数， **权重为 2**    
     
     ```lua
-        weight_week_online_days = 3
+        weight_week_online_days = 2
     ```
-    * 用户总的在线时长， **权重为 1**    
+    * 用户总的在线时长， **权重为 10**    
     
     ```lua
-        weight_online_time_total = 1
+        weight_online_time_total = 10
     ```
     * 最近一周的日均访问次数， **权重为 1**    
     
     ```lua
         weight_day_avg_access_count = 1
     ```
-    * 最近一周的有效访问次数， **权重为 2**   
+    * 最近一周的有效访问次数， **权重为 1**   
     
     ```lua
-    weight_week_access_count = 2
+    weight_week_access_count = 1
     ```
-    * 回源端口个数（游戏大厅），**权重为4**    
+    * 回源端口个数（游戏大厅），**权重为1**    
     
     ```lua
-        weight_target_port_num = 4
+        weight_target_port_num = 1
     ```
 
 * **用户活跃度评价算法**
@@ -191,3 +191,13 @@
         ```     
     
 ### 系统设计   
+
+    * 系统dependencies
+        
+        * java >= 1.8.0
+        * python >= 2.7
+        * spark
+
+    * 系统流程图
+
+        ![image](https://note.youdao.com/yws/api/personal/file/2F79EFF04613414E85C9C9612C52BDEC?method=download&shareKey=994f84a501b6832ac055de2eb14e6dda)

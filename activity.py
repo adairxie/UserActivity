@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import sys
 import time
 import json
 import redis
@@ -18,9 +19,15 @@ from elasticsearch import Elasticsearch
 from user import *
 from config import Config
 cfg = Config(file('user_activity.cfg'))
-redis_host = cfg.redis_host
-redis_port = cfg.redis_port
-redis_passwd = cfg.redis_passwd
+AK_REDIS_HOST = cfg.AK_REDIS_HOST
+AK_REDIS_PORT = cfg.AK_REDIS_PORT
+AK_REDIS_PASSWD = cfg.AK_REDIS_PASSWD
+AK_REDIS_DB = cfg.AK_REDIS_DB
+
+FP_REDIS_HOST = cfg.FP_REDIS_HOST
+FP_REDIS_PORT = cfg.FP_REDIS_PORT
+FP_REDIS_PASSWD = cfg.FP_REDIS_PASSWD
+FP_REDIS_DB = cfg.FP_REDIS_DB
 
 
 sc = SparkContext(master="local[*]", appName="UserActivityScore")
@@ -28,15 +35,14 @@ sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
 try:
-    fingerprint_pool = redis.ConnectionPool(host=redis_host, port=redis_port, db=2, password=redis_passwd)
-    accesskey_pool = redis.ConnectionPool(host=redis_host, port=redis_port, db=3, password=redis_passwd)
+    fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
-    accesskey_red_cli = redis.Redis(connection_pool=accesskey_pool)
-    portnum_red_cli = redis.Redis(host=redis_host, port=redis_port, db = 7, password=redis_passwd)
+    portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
 except Exception, e:
     print 'connect redis failed, err msg:', str(e)
+    sys.exit(1)
 
-def groupByAccessKey(score_dict):
+def groupByAccessKey(score_dict, days_count):
     result = {}
     for accesskey, score in score_dict.items():
         length = len(score)
@@ -64,10 +70,10 @@ def groupByAccessKey(score_dict):
                 score_key = 10
             result[accesskey][score_key]['ratio'] = \
                 result[accesskey][score_key]['count'] / float(length)
+
     pipe = accesskey_red_cli.pipeline(transaction=True) 
     for accesskey, scores in result.items():
         for phase, data in scores.items():
-            #print "%s, %d, %d, %.2f" % (accesskey, phase, data['count'], data['ratio'])
             data['ratio'] = "%.2f" % (data['ratio'] * 100)
             pipe.hset(accesskey, phase, json.dumps(data))
     pipe.execute()
@@ -77,7 +83,8 @@ def write_activity_score_to_redies(score_dict):
     pipe = fingerprint_red_cli.pipeline(transaction=True)
     for accesskey, user in score_dict.items():
         for fingerprint, score in user.items():
-            pipe.set(fingerprint, score)
+            key = 'fp_%s' % fingerprint
+            pipe.hset(key, 'score_activity', score)
     pipe.execute()
 
 def write_activity_score(score_dict, date):
@@ -142,9 +149,7 @@ class UserActivity():
 
     def Run(self):
         self.scores = {}
-
         for day in self.date_list:
-            print 'date %s begin' % day
             start = time.time()
             try:
                 df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
@@ -160,7 +165,6 @@ class UserActivity():
 
             result_list = df.toJSON().collect()
             self.UpdateAcitivity(result_list)
-
     
             for accesskey, group in self.users.items():
                 if accesskey not in self.scores:
@@ -171,15 +175,9 @@ class UserActivity():
                     user.ClearDailyStats()
                     self.scores[accesskey][fingerprint] = score
             
-            groupByAccessKey(self.scores)
-            #write_activity_score(self.scores, day)
             write_activity_score_to_redies(self.scores)
-            done = time.time()
-            elapsed = done - start
-            print 'date %s end, %.2f seconds elapsed' % (day, elapsed)
         
-        today = datetime.date.today()
-        filename = 'stats-%s.dat' % today
+        filename = 'stats-%s.dat' % self.date_list[-1]
         outfile = open(filename, 'wb')
         pickle.dump(self.users, outfile)
         outfile.close()

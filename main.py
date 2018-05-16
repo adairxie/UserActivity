@@ -73,4 +73,4 @@ if __name__ == '__main__':
     userScore = UserActivity(date_list)
     userScore.Run()
 
-    #CreateCronTabJob()
+    CreateCronTabJob()

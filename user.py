@@ -58,14 +58,14 @@ class User():
 
     def UpdateStats(self):
         # 更新最近一周的在线时间
-        if len(self.week_online_time_list) >= 7:
+        if len(self.week_online_time_list) >= cfg.THRESHOLD_DAYS:
             del self.week_online_time_list[0]
         self.week_online_time_list.append(self.day_online_time)
         for online_time in self.week_online_time_list:
             self.week_online_time_total += online_time
 
         # 更新用户最近一周的在线天数
-        if len(self.week_online_days_list) >= 7:
+        if len(self.week_online_days_list) >= cfg.THRESHOLD_DAYS:
             del self.week_online_days_list[0]
         self.week_online_days_list.append(self.today_online)
         for online in self.week_online_days_list:
@@ -73,10 +73,10 @@ class User():
 
         # 更新最近一周的日均在线时间
         if self.week_online_day_num > 0:
-            self.day_avg_online_time = self.week_online_time_total / 7.0
+            self.day_avg_online_time = self.week_online_time_total / cfg.THRESHOLD_DAYS
 
         # 更新最近一周的访问次数 
-        if len(self.week_access_count_list) >= 7:
+        if len(self.week_access_count_list) >= cfg.THRESHOLD_DAYS:
             del self.week_access_count_list[0]
         self.week_access_count_list.append(self.day_access_count)
         for access_count in self.week_access_count_list:
@@ -86,11 +86,10 @@ class User():
 
         # 更新最近一周的日均访问次数
         if self.week_online_day_num > 0:
-            self.day_avg_access_count = self.week_access_count / 7.0
+            self.day_avg_access_count = self.week_access_count / cfg.THRESHOLD_DAYS
         if self.day_avg_access_count > cfg.DAY_ACCESS_LIMIT:
             self.day_avg_access_count = cfg.DAY_ACCESS_LIMIT
 
-        
         # 更新总的在线时间
         self.total_online_time += self.day_online_time
 
@@ -128,7 +127,7 @@ class User():
             week_online_time_total_ratio = 1
         self.score_week_online_time_total = week_online_time_total_ratio * 100
 
-        self.score_week_online_days = self.week_online_day_num / 7.0 * 100
+        self.score_week_online_days = self.week_online_day_num / cfg.THRESHOLD_DAYS * 100
 
         week_access_count_ratio = self.week_access_count / cfg.WEEK_ACCESS_LIMIT
         if week_access_count_ratio > 1:
@@ -158,6 +157,5 @@ class User():
               self.score_target_port_num * cfg.weight_target_port_num +
               self.score_total_online_time * cfg.weight_online_time_total)
 
-        self.score = '%.2f' % ((score / cfg.TOTAL_SCORE) * 100)
+        self.score = round((score / cfg.TOTAL_SCORE) * 100, 2)
         return self.score
-

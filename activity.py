@@ -34,6 +34,8 @@ sc = SparkContext(master="local[*]", appName="UserActivityScore")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
+historydata = 'stats-%s.dat' % (datetime.date.today() - datetime.timedelta(days=1))
+
 try:
     fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
@@ -113,9 +115,8 @@ class UserActivity():
         self.date_list = date_list
 
         self.users = {}
-        statsfile = 'stats-%s.dat' % (datetime.date.today() - datetime.timedelta(days=1))
-        if Path(statsfile).is_file():
-            history = open(statsfile, 'rb')
+        if Path(historydata).is_file():
+            history = open(historydata, 'rb')
             history_stats = pickle.load(history)
             if history_stats is not None:
                 self.users = history_stats
@@ -177,7 +178,8 @@ class UserActivity():
             
             write_activity_score_to_redies(self.scores)
         
-        filename = 'stats-%s.dat' % self.date_list[-1]
+        filename = 'stats-%s.dat' % datetime.date.today()
         outfile = open(filename, 'wb')
         pickle.dump(self.users, outfile)
         outfile.close()
+        os.remove(historydata)

@@ -102,7 +102,9 @@ def write_activity_score(score_dict, date):
 
 def accesskey_port_num():
     result = {}
-    keys = portnum_red_cli.keys("*")
+    keys = []
+    for key in portnum_red_cli.scan_iter():
+        keys.append(key)
     if keys is not None:
         for accesskey in keys:
             json_data = portnum_red_cli.get(accesskey)
@@ -182,4 +184,5 @@ class UserActivity():
         outfile = open(filename, 'wb')
         pickle.dump(self.users, outfile)
         outfile.close()
-        os.remove(historydata)
+        if Path(historydata).is_file():
+            os.remove(historydata)

@@ -181,7 +181,7 @@ class UserActivity():
                     user.ClearDailyStats()
                     self.scores[accesskey][fingerprint] = score
             
-            #write_activity_score_to_redies(self.scores)
+            write_activity_score_to_redies(self.scores)
             done = time.time()
             elapsed = done - start
             logging.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))

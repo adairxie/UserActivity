@@ -7,6 +7,8 @@ import redis
 import math
 import pickle
 import datetime
+import logging
+
 from pathlib import Path
 
 import findspark
@@ -41,7 +43,7 @@ try:
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
     portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
 except Exception, e:
-    print 'connect redis failed, err msg:', str(e)
+    logging.error('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
 
 def groupByAccessKey(score_dict, days_count):
@@ -153,6 +155,7 @@ class UserActivity():
     def Run(self):
         self.scores = {}
         for day in self.date_list:
+            logging.info('beginning analysis %s tjkd app log' % day)
             start = time.time()
             try:
                 df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
@@ -163,7 +166,7 @@ class UserActivity():
                     .withColumnRenamed("first(accesskey)", "accesskey") \
                     .withColumnRenamed("approx_count_distinct(target_port)", "target_port_num")
             except Exception, e:
-                print day, str(e)
+                logging.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
                 continue 
 
             result_list = df.toJSON().collect()
@@ -178,7 +181,10 @@ class UserActivity():
                     user.ClearDailyStats()
                     self.scores[accesskey][fingerprint] = score
             
-            write_activity_score_to_redies(self.scores)
+            #write_activity_score_to_redies(self.scores)
+            done = time.time()
+            elapsed = done - start
+            logging.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
         
         filename = 'stats-%s.dat' % datetime.date.today()
         outfile = open(filename, 'wb')

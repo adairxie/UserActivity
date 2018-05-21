@@ -7,9 +7,9 @@ import redis
 import math
 import pickle
 import datetime
-import logging
 
 from pathlib import Path
+from utils import logger
 
 import findspark
 findspark.init()
@@ -19,17 +19,17 @@ from pyspark.sql import SQLContext, HiveContext
 from elasticsearch import Elasticsearch
 
 from user import *
-from config import Config
-cfg = Config(file('user_activity.cfg'))
-AK_REDIS_HOST = cfg.AK_REDIS_HOST
-AK_REDIS_PORT = cfg.AK_REDIS_PORT
-AK_REDIS_PASSWD = cfg.AK_REDIS_PASSWD
-AK_REDIS_DB = cfg.AK_REDIS_DB
+from conf import sysconfig
 
-FP_REDIS_HOST = cfg.FP_REDIS_HOST
-FP_REDIS_PORT = cfg.FP_REDIS_PORT
-FP_REDIS_PASSWD = cfg.FP_REDIS_PASSWD
-FP_REDIS_DB = cfg.FP_REDIS_DB
+AK_REDIS_HOST = sysconfig.AK_REDIS_HOST
+AK_REDIS_PORT = sysconfig.AK_REDIS_PORT
+AK_REDIS_PASSWD = sysconfig.AK_REDIS_PASSWD
+AK_REDIS_DB = sysconfig.AK_REDIS_DB
+
+FP_REDIS_HOST = sysconfig.FP_REDIS_HOST
+FP_REDIS_PORT = sysconfig.FP_REDIS_PORT
+FP_REDIS_PASSWD = sysconfig.FP_REDIS_PASSWD
+FP_REDIS_DB = sysconfig.FP_REDIS_DB
 
 
 sc = SparkContext(master="local[*]", appName="UserActivityScore")
@@ -43,7 +43,7 @@ try:
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
     portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
 except Exception, e:
-    logging.error('connect redis failed, err msg:%s' % str(e))
+    logger.error('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
 
 def groupByAccessKey(score_dict, days_count):
@@ -155,7 +155,7 @@ class UserActivity():
     def Run(self):
         self.scores = {}
         for day in self.date_list:
-            logging.info('beginning analysis %s tjkd app log' % day)
+            logger.info('beginning analysis %s tjkd app log' % day)
             start = time.time()
             try:
                 df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
@@ -166,7 +166,7 @@ class UserActivity():
                     .withColumnRenamed("first(accesskey)", "accesskey") \
                     .withColumnRenamed("approx_count_distinct(target_port)", "target_port_num")
             except Exception, e:
-                logging.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
+                logger.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
                 continue 
 
             result_list = df.toJSON().collect()
@@ -181,10 +181,10 @@ class UserActivity():
                     user.ClearDailyStats()
                     self.scores[accesskey][fingerprint] = score
             
-            #write_activity_score_to_redies(self.scores)
+            write_activity_score_to_redies(self.scores)
             done = time.time()
             elapsed = done - start
-            logging.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
+            logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
         
         filename = 'stats-%s.dat' % datetime.date.today()
         outfile = open(filename, 'wb')

@@ -3,10 +3,9 @@ import os
 import sys
 import time
 import pickle
-import logging
 import optparse
 import datetime
-
+from utils import logger
 
 from activity import *
 from crontab import CronTab
@@ -15,14 +14,6 @@ from pathlib import Path
 reload(sys)
 sys.setdefaultencoding('utf8')
 cron = CronTab(user='root')
-
-logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s [%(filename)s, line:%(lineno)d, %(levelname)s]: %(message)s',
-                        datefmt = '%Y-%m-%d %H:%M:%S',
-                        filename="activit.log",
-                        filemode='a'
-                    )
-
 
 def generate_dates(start_date, end_date):
     td = datetime.timedelta(hours=24)
@@ -38,10 +29,10 @@ def CreateCronTabJob():
     absPath = os.path.abspath(__file__)
     iter = cron.find_command('user_activity')
     for item in iter:
-        logging.info('crontab task have already been created')
+        logger.info('crontab task have already been created')
         sys.exit()
     job = cron.new(command='python ' + absPath)
-    job.hour.every(24)
+    job.hour.every(23)
     cron.write()
     job.enable()
 

@@ -27,11 +27,11 @@ def generate_dates(start_date, end_date):
 
 def CreateCronTabJob():
     absPath = os.path.abspath(__file__)
-    iter = cron.find_command('user_activity')
+    iter = cron.find_command(absPath)
     for item in iter:
         logger.info('crontab task have already been created')
         sys.exit()
-    job = cron.new(command='python ' + absPath)
+    job = cron.new(command='/usr/bin/python2.7 ' + absPath)
     job.hour.every(23)
     cron.write()
     job.enable()

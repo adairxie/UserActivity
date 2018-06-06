@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import re
 import sys
 import time
 import json
@@ -31,12 +32,11 @@ FP_REDIS_PORT = sysconfig.FP_REDIS_PORT
 FP_REDIS_PASSWD = sysconfig.FP_REDIS_PASSWD
 FP_REDIS_DB = sysconfig.FP_REDIS_DB
 
+DAT_PATH = sysconfig.DAT_PATH
 
 sc = SparkContext(master="local[*]", appName="UserActivityScore")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
-
-historydata = 'stats-%s.dat' % (datetime.date.today() - datetime.timedelta(days=1))
 
 try:
     fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
@@ -45,6 +45,17 @@ try:
 except Exception, e:
     logger.error('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
+
+def getLastestDatFile(path):
+    '''get the lastest stat file'''
+    f_list = os.listdir(path)
+    lastest = None
+    for filename in f_list:
+	if os.path.splitext(filename)[1] == '.dat':
+	    if cmp(filename, lastest) == 1:
+		lastest = filename  
+    return lastest
+
 
 def groupByAccessKey(score_dict, days_count):
     result = {}
@@ -119,7 +130,8 @@ class UserActivity():
         self.date_list = date_list
 
         self.users = {}
-        if Path(historydata).is_file():
+	historydata = getLastestDatFile(DAT_PATH)
+        if historydata is not None and  Path(historydata).is_file():
             history = open(historydata, 'rb')
             history_stats = pickle.load(history)
             if history_stats is not None:
@@ -186,9 +198,7 @@ class UserActivity():
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
         
-        filename = 'stats-%s.dat' % datetime.date.today()
+        filename = '%s/stats-%s.dat' % (DAT_PATH, datetime.date.today())
         outfile = open(filename, 'wb')
         pickle.dump(self.users, outfile)
         outfile.close()
-        if Path(historydata).is_file():
-            os.remove(historydata)

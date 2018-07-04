@@ -8,14 +8,13 @@ import datetime
 from utils import logger
 
 from activity import *
-from crontab import CronTab
 from pathlib import Path
 
 from conf import sysconfig
+from multiprocessing import Process
 
 reload(sys)
 sys.setdefaultencoding('utf8')
-cron = CronTab(user='root')
 
 def generate_dates(start_date, end_date):
     td = datetime.timedelta(hours=24)
@@ -25,18 +24,6 @@ def generate_dates(start_date, end_date):
         date_list.append(current_date)
         current_date += td
     return date_list
-
-
-def CreateCronTabJob():
-    absPath = os.path.abspath(__file__)
-    iter = cron.find_command(absPath)
-    for item in iter:
-        logger.info('crontab task have already been created')
-        sys.exit()
-    job = cron.new(command='/usr/bin/python2.7 ' + absPath)
-    job.hour.every(23)
-    cron.write()
-    job.enable()
 
 
 parser = optparse.OptionParser()
@@ -71,13 +58,15 @@ def parseDatesFromCmdLine():
 
     return start_date, end_date
 
+def timerWork():
+    while True:
+	start_date, end_date = parseDatesFromCmdLine() 
+	date_list = generate_dates(start_date, end_date)
+
+	userScore = UserActivity(date_list)
+	userScore.Run()
+	time.sleep(3600 * 23)
 
 if __name__ == '__main__':
-
-    start_date, end_date = parseDatesFromCmdLine() 
-    date_list = generate_dates(start_date, end_date)
-
-    userScore = UserActivity(date_list)
-    userScore.Run()
-
-    CreateCronTabJob()
+    p = Process(target=timerWork)
+    p.start()

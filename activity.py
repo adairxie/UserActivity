@@ -53,7 +53,7 @@ def getLastestDatFile(path):
     for filename in f_list:
 	if os.path.splitext(filename)[1] == '.dat':
 	    if cmp(filename, lastest) == 1:
-		lastest = filename  
+		lastest = os.path.join(path, filename)  
     return lastest
 
 

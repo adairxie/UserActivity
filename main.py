@@ -11,7 +11,6 @@ from activity import *
 from pathlib import Path
 
 from conf import sysconfig
-from multiprocessing import Process
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -58,7 +57,7 @@ def parseDatesFromCmdLine():
 
     return start_date, end_date
 
-def timerWork():
+def doWork():
     while True:
 	start_date, end_date = parseDatesFromCmdLine() 
 	date_list = generate_dates(start_date, end_date)
@@ -68,5 +67,4 @@ def timerWork():
 	time.sleep(3600 * 23)
 
 if __name__ == '__main__':
-    p = Process(target=timerWork)
-    p.start()
+    doWork()

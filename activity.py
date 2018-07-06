@@ -49,12 +49,18 @@ except Exception, e:
 def getLastestDatFile(path):
     '''get the lastest stat file'''
     f_list = os.listdir(path)
-    lastest = None
     for filename in f_list:
-	if os.path.splitext(filename)[1] == '.dat':
-	    if cmp(filename, lastest) == 1:
-		lastest = os.path.join(path, filename)  
-    return lastest
+        if os.path.splitext(filename)[1] == '.dat':
+            lastest = os.path.join(path, filename)
+            return lastest
+
+def delHistoryDateFile(path):
+    '''remove history data file'''
+    f_list = os.listdir(path)
+    for filename in f_list:
+        if os.path.splitext(filename)[1] == '.dat':
+            dst = os.path.join(path, filename)
+            os.remove(dst)
 
 
 def groupByAccessKey(score_dict, days_count):
@@ -130,7 +136,7 @@ class UserActivity():
         self.date_list = date_list
 
         self.users = {}
-	historydata = getLastestDatFile(DAT_PATH)
+        historydata = getLastestDatFile(DAT_PATH)
         if historydata is not None and  Path(historydata).is_file():
             history = open(historydata, 'rb')
             history_stats = pickle.load(history)
@@ -197,8 +203,10 @@ class UserActivity():
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
-        
-        filename = '%s/stats-%s.dat' % (DAT_PATH, datetime.date.today())
-        outfile = open(filename, 'wb')
-        pickle.dump(self.users, outfile)
-        outfile.close()
+
+        if len(self.date_list) != 0:
+            delHistoryDateFile(DAT_PATH)
+            filename = '%s/stats-%s.dat' % (DAT_PATH, datetime.date.today())
+            outfile = open(filename, 'wb')
+            pickle.dump(self.users, outfile)
+            outfile.close()

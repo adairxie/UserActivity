@@ -37,7 +37,7 @@ def parseDatesFromCmdLine():
     start_date = options.start_date
     today = datetime.date.today()
     if start_date is None:
-	lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
+        lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
 	if lastest_dat_file is  not None:
 	    match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
 	    start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
@@ -59,12 +59,12 @@ def parseDatesFromCmdLine():
 
 def doWork():
     while True:
-	start_date, end_date = parseDatesFromCmdLine() 
-	date_list = generate_dates(start_date, end_date)
+        start_date, end_date = parseDatesFromCmdLine()
+        date_list = generate_dates(start_date, end_date)
 
-	userScore = UserActivity(date_list)
-	userScore.Run()
-	time.sleep(3600 * 23)
+        userScore = UserActivity(date_list)
+        userScore.Run()
+        time.sleep(3600 * 23)
 
 if __name__ == '__main__':
     doWork()

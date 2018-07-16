@@ -32,22 +32,18 @@ parser.add_option('-s', '--start', action='store', dest="start_date",
 parser.add_option('-e', '--end', action='store', dest="end_date",
     help="calculate user's activity stop this day, for example: 2018-05-02")
 
-def parseDatesFromCmdLine():
-    options, args = parser.parse_args()
-    start_date = options.start_date
+def parseDatesFromCmdLine(start_date, end_date):
     today = datetime.date.today()
     if start_date is None:
         lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
-	if lastest_dat_file is  not None:
-	    match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
-	    start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
-	if start_date is None:
-            start_date = today - datetime.timedelta(days=1)
+        if lastest_dat_file is  not None:
+            match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
+            start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
+    if start_date is None:
+        start_date = today - datetime.timedelta(days=1)
     else:
-        dates = start_date.split('-') 
+        dates = start_date.split('-')
         start_date = datetime.date(int(dates[0]), int(dates[1]), int(dates[2]))
-
-    end_date = options.end_date
 
     if end_date is None:
         end_date = today - datetime.timedelta(days=1)
@@ -58,13 +54,19 @@ def parseDatesFromCmdLine():
     return start_date, end_date
 
 def doWork():
+    options, args = parser.parse_args()
+    start_date = options.start_date
+    end_date = options.end_date
+
     while True:
-        start_date, end_date = parseDatesFromCmdLine()
+        start_date, end_date = parseDatesFromCmdLine(start_date, end_date)
         date_list = generate_dates(start_date, end_date)
 
         userScore = UserActivity(date_list)
         userScore.Run()
         time.sleep(3600 * 23)
+        start_date = None
+        end_date = None
 
 if __name__ == '__main__':
     doWork()

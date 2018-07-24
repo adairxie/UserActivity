@@ -36,11 +36,11 @@ def parseDatesFromCmdLine(start_date, end_date):
     today = datetime.date.today()
     if start_date is None:
         lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
-        if lastest_dat_file is  not None:
+        if lastest_dat_file is not None:
             match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
             start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
-    if start_date is None:
-        start_date = today - datetime.timedelta(days=1)
+            if start_date is None:
+                start_date = today - datetime.timedelta(days=1)
     else:
         dates = start_date.split('-')
         start_date = datetime.date(int(dates[0]), int(dates[1]), int(dates[2]))

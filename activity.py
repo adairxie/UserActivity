@@ -62,44 +62,6 @@ def delHistoryDateFile(path):
             dst = os.path.join(path, filename)
             os.remove(dst)
 
-
-def groupByAccessKey(score_dict, days_count):
-    result = {}
-    for accesskey, score in score_dict.items():
-        length = len(score)
-        result[accesskey] = {}
-        result[accesskey][0] = {'count':0, 'ratio':0}
-        result[accesskey][1] = {'count':0, 'ratio':0}
-        result[accesskey][2] = {'count':0, 'ratio':0}
-        result[accesskey][3] = {'count':0, 'ratio':0}
-        result[accesskey][4] = {'count':0, 'ratio':0}
-        result[accesskey][5] = {'count':0, 'ratio':0}
-        result[accesskey][6] = {'count':0, 'ratio':0}
-        result[accesskey][7] = {'count':0, 'ratio':0}
-        result[accesskey][8] = {'count':0, 'ratio':0}
-        result[accesskey][9] = {'count':0, 'ratio':0}
-        result[accesskey][10] = {'count':0, 'ratio':0}
-    
-        for fingerprint, user_score in score.items(): 
-            score_key = math.floor(float(user_score) / 10)
-            if score_key > 10:
-                score_key = 10
-            result[accesskey][score_key]['count'] += 1 
-        for fingerprint, user_score in score.items(): 
-            score_key = math.floor(float(user_score) / 10)
-            if score_key > 10:
-                score_key = 10
-            result[accesskey][score_key]['ratio'] = \
-                result[accesskey][score_key]['count'] / float(length)
-
-    pipe = accesskey_red_cli.pipeline(transaction=True) 
-    for accesskey, scores in result.items():
-        for phase, data in scores.items():
-            data['ratio'] = "%.2f" % (data['ratio'] * 100)
-            pipe.hset(accesskey, phase, json.dumps(data))
-    pipe.execute()
-
-
 def write_activity_score_to_redies(score_dict):
     pipe = fingerprint_red_cli.pipeline(transaction=True)
     for accesskey, user in score_dict.items():

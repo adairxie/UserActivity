@@ -68,6 +68,13 @@ def write_activity_score_to_redies(score_dict):
         for fingerprint, score in user.items():
             key = 'fp_%s' % fingerprint
             pipe.hset(key, 'score_activity', score)
+            if score <= 30:
+                pipe.hset(key, 'level', 'gaofang')
+            elif score <= 70:
+                pipe.hset(key, 'level', 'personal')
+            else:
+                pipe.hset(key, 'level', 'good')
+
     pipe.execute()
 
 def write_activity_score(score_dict, date):

@@ -7,6 +7,7 @@ import json
 import redis
 import math
 import pickle
+import pymysql
 import datetime
 
 from pathlib import Path
@@ -38,6 +39,29 @@ sc = SparkContext(master="local[*]", appName="UserActivityScore")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
+# Connect to mysql
+connection = pymysql.connect(host='127.0.0.1',
+                       user='root',
+                       passwd='dbadmin',
+                       db='usercredit',
+                       charset='utf8mb4',
+                       cursorclass=pymysql.cursors.DictCursor)
+
+def writeUserInfoToMySQL(fp, level, accesskey):
+    with connection.cursor() as cursor:
+        # Create a new record
+        sql = """
+            INSERT INTO activity
+                (fp, level, accesskey)
+            VALUES
+                (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                level = VALUES(level);
+            """
+        cursor.execute(sql, (fp, level, accesskey))
+
+    connection.commit()
+
 try:
     fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
@@ -68,12 +92,15 @@ def write_activity_score_to_redies(score_dict):
         for fingerprint, score in user.items():
             key = 'fp_%s' % fingerprint
             pipe.hset(key, 'score_activity', score)
+            
+            level = 'good'
             if score <= 30:
-                pipe.hset(key, 'level', 'gaofang')
+                level = 'gaofang'
             elif score <= 70:
-                pipe.hset(key, 'level', 'personal')
-            else:
-                pipe.hset(key, 'level', 'good')
+                level = 'personal'
+
+            pipe.hset(key, 'level', level)
+            writeUserInfoToMySQL(fingerprint, level, accesskey)
 
     pipe.execute()
 

@@ -47,18 +47,19 @@ connection = pymysql.connect(host='127.0.0.1',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
 
-def writeUserInfoToMySQL(fp, level, accesskey):
+def writeUserInfoToMySQL(fp, level, accesskey, score):
     with connection.cursor() as cursor:
         # Create a new record
         sql = """
             INSERT INTO activity
-                (fp, level, accesskey)
+                (fp, level, accesskey, score)
             VALUES
-                (%s, %s, %s)
+                (%s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                level = VALUES(level);
+                level = VALUES(level),
+                score = VALUES(score);
             """
-        cursor.execute(sql, (fp, level, accesskey))
+        cursor.execute(sql, (fp, level, accesskey, score))
 
     connection.commit()
 
@@ -100,7 +101,7 @@ def write_activity_score_to_redies(score_dict):
                 level = 'personal'
 
             pipe.hset(key, 'level', level)
-            writeUserInfoToMySQL(fingerprint, level, accesskey)
+            writeUserInfoToMySQL(fingerprint, level, accesskey, float(score))
 
     pipe.execute()
 
@@ -153,6 +154,12 @@ class UserActivity():
             accesskey = record_dict['accesskey']
             if accesskey in self.users:
                 if fingerprint in self.users[accesskey]:
+                    blacktime = fingerprint_red_cli.hget(fingerprint, 'blacktime')
+                    if blacktime is not None:
+                        orig = datetime.datetime.fromtimestamp(int(blacktime))
+                        limit  = orig + datetime.timedelta(days=3)
+                        if datetime.datetime.now() < limit:
+                            continue
                     user = self.users[accesskey][fingerprint]
                 else:
                     user = User()

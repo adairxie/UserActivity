@@ -88,8 +88,8 @@ def delHistoryDateFile(path):
             os.remove(dst)
 
 def write_activity_score_to_redies(score_dict):
-    pipe = fingerprint_red_cli.pipeline(transaction=True)
     for accesskey, user in score_dict.items():
+        pipe = fingerprint_red_cli.pipeline(transaction=True)
         for fingerprint, score in user.items():
             key = 'fp_%s' % fingerprint
             pipe.hset(key, 'score_activity', score)
@@ -102,8 +102,7 @@ def write_activity_score_to_redies(score_dict):
 
             pipe.hset(key, 'level', level)
             writeUserInfoToMySQL(fingerprint, level, accesskey, float(score))
-
-    pipe.execute()
+        pipe.execute()
 
 def write_activity_score(score_dict, date):
     dirname = os.path.dirname(os.path.realpath(__file__))

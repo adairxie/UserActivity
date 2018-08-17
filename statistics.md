@@ -6,21 +6,20 @@
 
 * 响应    
 ```
--- 成功
-{
-    "message": {
-        "personal": 123016,
-        "good": 38681,
-        "gaofang": 151452
-    },
-    "success": true
-}
-```
+    -- 成功
+    {
+        "message": {
+            "personal": 123016,
+            "good": 38681,
+            "gaofang": 151452
+        },
+        "success": true
+    }
+    
+    -- 失败
+    {
+        "message": "accesskey not exists",
+        "success": false
+    }
 
-```
--- 失败
-{
-    "message": "accesskey not exists",
-    "success": false
-}
 ```

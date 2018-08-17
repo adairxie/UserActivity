@@ -1,7 +1,7 @@
 ### 信誉等级分布统计接口
 
 * GET方法，query_args表示传递的accesskey   
-```/statistics/accesskey=<query_args>```
+```/statistics?accesskey=<query_args>```
 
 * 响应, JSON格式    
 ```

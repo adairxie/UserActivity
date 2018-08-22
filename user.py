@@ -5,6 +5,7 @@ from conf import sysconfig
 class User():
     def __init__(self):
         self.fingerprint = ''
+        self.timestamp = ''
         self.target_port_total = 2.0
         self.total_online_time = 0
         self.week_online_time_list = []
@@ -51,6 +52,7 @@ class User():
     def DailyStats(self, record):
         '''每天需要统计的数据'''
         self.today_online = 1
+        self.timestamp = record['timestamp']
         self.target_port_num = record['target_port_num']
         self.day_online_time = record['day_online_time']
         self.day_access_count = record['day_access_count']

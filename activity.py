@@ -47,19 +47,20 @@ connection = pymysql.connect(host='127.0.0.1',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
 
-def writeUserInfoToMySQL(fp, level, accesskey, score):
+def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
     with connection.cursor() as cursor:
         # Create a new record
         sql = """
             INSERT INTO activity
-                (fp, level, accesskey, score)
+                (fp, level, accesskey, score, timestamp)
             VALUES
-                (%s, %s, %s, %s)
+                (%s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 level = VALUES(level),
+                timestamp = VALUES(timestamp),
                 score = VALUES(score);
             """
-        cursor.execute(sql, (fp, level, accesskey, score))
+        cursor.execute(sql, (fp, level, accesskey, score, timestamp))
 
     connection.commit()
 
@@ -90,18 +91,21 @@ def delHistoryDateFile(path):
 def write_activity_score_to_redies(score_dict):
     for accesskey, user in score_dict.items():
         pipe = fingerprint_red_cli.pipeline(transaction=True)
-        for fingerprint, score in user.items():
+        for fingerprint, user in user.items():
             key = 'fp_%s' % fingerprint
+            score = user.score
+            timestamp = user.timestamp
+
             pipe.hset(key, 'score_activity', score)
             
             level = 'good'
-            if score <= 30:
+            if score <= 15:
                 level = 'gaofang'
-            elif score <= 70:
+            elif score <= 55:
                 level = 'personal'
 
             pipe.hset(key, 'level', level)
-            writeUserInfoToMySQL(fingerprint, level, accesskey, float(score))
+            writeUserInfoToMySQL(fingerprint, level, accesskey, float(score), timestamp)
         pipe.execute()
 
 def write_activity_score(score_dict, date):
@@ -180,10 +184,11 @@ class UserActivity():
             try:
                 df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
                 df = df.groupBy('fingerprint') \
-                    .agg({"session_time": "sum", "target_port": "approx_count_distinct", "fingerprint": "count", "accesskey":"first"}) \
+                        .agg({"session_time": "sum", "target_port": "approx_count_distinct", "fingerprint": "count", "accesskey":"first", "Timestamp":"first"}) \
                     .withColumnRenamed("sum(session_time)", "day_online_time") \
                     .withColumnRenamed("count(fingerprint)", "day_access_count") \
                     .withColumnRenamed("first(accesskey)", "accesskey") \
+                    .withColumnRenamed("first(Timestamp)", "timestamp") \
                     .withColumnRenamed("approx_count_distinct(target_port)", "target_port_num")
             except Exception, e:
                 logger.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
@@ -197,9 +202,9 @@ class UserActivity():
                     self.scores[accesskey] = {}
                 for fingerprint, user in group.items():
                     user.UpdateStats() 
-                    score = user.Score()
+                    user.Score()
                     user.ClearDailyStats()
-                    self.scores[accesskey][fingerprint] = score
+                    self.scores[accesskey][fingerprint] = user
             
             write_activity_score_to_redies(self.scores)
             done = time.time()

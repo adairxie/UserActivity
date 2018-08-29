@@ -13,14 +13,8 @@ import datetime
 from pathlib import Path
 from utils import logger
 
-import findspark
-findspark.init()
-
-from pyspark import SparkContext
-from pyspark.sql import SQLContext, HiveContext
-from elasticsearch import Elasticsearch
-
 from user import *
+from elastics import queryfromes
 from conf import sysconfig
 
 AK_REDIS_HOST = sysconfig.AK_REDIS_HOST
@@ -34,10 +28,6 @@ FP_REDIS_PASSWD = sysconfig.FP_REDIS_PASSWD
 FP_REDIS_DB = sysconfig.FP_REDIS_DB
 
 DAT_PATH = sysconfig.DAT_PATH
-
-sc = SparkContext(master="local[*]", appName="UserActivityScore")
-sc.setLogLevel("ERROR")
-slc = SQLContext(sc)
 
 # Connect to mysql
 connection = pymysql.connect(host='127.0.0.1',
@@ -149,12 +139,11 @@ class UserActivity():
 
     def UpdateAcitivity(self, logMsgList):
         for i, record in enumerate(logMsgList):
-            record_dict = json.loads(record)
-            if 'fingerprint' not in record_dict:
+            if 'fingerprint' not in record:
                 return
 
-            fingerprint = record_dict['fingerprint']
-            accesskey = record_dict['accesskey']
+            fingerprint = record['fingerprint']
+            accesskey = record['accesskey']
             if accesskey in self.users:
                 if fingerprint in self.users[accesskey]:
                     blacktime = fingerprint_red_cli.hget(fingerprint, 'blacktime')
@@ -168,12 +157,12 @@ class UserActivity():
                     user = User()
                 if accesskey in self.portNum:
                     user.target_port_total = self.portNum[accesskey]
-                user.DailyStats(record_dict)
+                user.DailyStats(record)
                 self.users[accesskey][fingerprint] = user
             else:
                 self.users[accesskey] = {}
                 user = User()
-                user.DailyStats(record_dict)
+                user.DailyStats(record)
                 self.users[accesskey][fingerprint] = user
 
     def Run(self):
@@ -181,20 +170,7 @@ class UserActivity():
         for day in self.date_list:
             logger.info('beginning analysis %s tjkd app log' % day)
             start = time.time()
-            try:
-                df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
-                df = df.groupBy('fingerprint') \
-                        .agg({"session_time": "sum", "target_port": "approx_count_distinct", "fingerprint": "count", "accesskey":"first", "Timestamp":"first"}) \
-                    .withColumnRenamed("sum(session_time)", "day_online_time") \
-                    .withColumnRenamed("count(fingerprint)", "day_access_count") \
-                    .withColumnRenamed("first(accesskey)", "accesskey") \
-                    .withColumnRenamed("first(Timestamp)", "timestamp") \
-                    .withColumnRenamed("approx_count_distinct(target_port)", "target_port_num")
-            except Exception, e:
-                logger.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
-                continue 
-
-            result_list = df.toJSON().collect()
+            result_list = queryfromes("tjkd-app-{}".format(day))
             self.UpdateAcitivity(result_list)
     
             for accesskey, group in self.users.items():

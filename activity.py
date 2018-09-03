@@ -2,13 +2,14 @@
 import os
 import re
 import sys
-import time
 import json
+import time
 import redis
 import math
 import pickle
 import pymysql
 import datetime
+import maxminddb
 
 from pathlib import Path
 from utils import logger
@@ -17,17 +18,20 @@ from user import *
 from elastics import queryfromes
 from conf import sysconfig
 
-AK_REDIS_HOST = sysconfig.AK_REDIS_HOST
-AK_REDIS_PORT = sysconfig.AK_REDIS_PORT
-AK_REDIS_PASSWD = sysconfig.AK_REDIS_PASSWD
-AK_REDIS_DB = sysconfig.AK_REDIS_DB
 
-FP_REDIS_HOST = sysconfig.FP_REDIS_HOST
-FP_REDIS_PORT = sysconfig.FP_REDIS_PORT
-FP_REDIS_PASSWD = sysconfig.FP_REDIS_PASSWD
-FP_REDIS_DB = sysconfig.FP_REDIS_DB
+REDIS_HOST = sysconfig.REDIS_HOST
+REDIS_PORT = sysconfig.REDIS_PORT
+REDIS_PASSWD = sysconfig.REDIS_PASSWD
+REDIS_DB = sysconfig.REDIS_DB
 
 DAT_PATH = sysconfig.DAT_PATH
+MMDB = sysconfig.MMDB
+
+try:
+    mmdb_reader = maxminddb.open_database(MMDB)
+except maxminddb.InvalidDatabaseError, e:
+    print('open %s failed, err msg:%s' % (MMDB, str(e)))
+    sys.exit(1)
 
 # Connect to mysql
 connection = pymysql.connect(host='127.0.0.1',
@@ -55,11 +59,10 @@ def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
     connection.commit()
 
 try:
-    fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
-    fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
-    portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
+    ipcredit_pool = redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWD)
+    ipcredit_red_cli = redis.Redis(connection_pool=ipcredit_pool)
 except Exception, e:
-    logger.error('connect redis failed, err msg:%s' % str(e))
+    print('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
 
 def getLastestDatFile(path):
@@ -78,25 +81,34 @@ def delHistoryDateFile(path):
             dst = os.path.join(path, filename)
             os.remove(dst)
 
+def querymmdb(ip):
+    if ip is not None:
+        try:
+            ipinfo = mmdb_reader.get(ip)
+            if ipinfo is not None:
+                continent = ipinfo['continent']['names']['zh-CN']
+                country = ipinfo['country']['names']['zh-CN']
+                province = ipinfo['province']['names']['zh-CN']
+                city = ipinfo['city']['names']['zh-CN']
+                isp = ipinfo['isp']['names']['zh-CN']
+                return {'continent': continent, 'country': country, 'province':province, 'city':city, 'isp':isp}
+        except ValueError, e:
+            return None
+    return None
+
+
 def write_activity_score_to_redies(score_dict):
-    for accesskey, user in score_dict.items():
-        pipe = fingerprint_red_cli.pipeline(transaction=True)
-        for fingerprint, user in user.items():
-            key = 'fp_%s' % fingerprint
-            score = user.score
-            timestamp = user.timestamp
-
-            pipe.hset(key, 'score_activity', score)
-            
-            level = 'good'
-            if score <= 15:
-                level = 'gaofang'
-            elif score <= 55:
-                level = 'personal'
-
-            pipe.hset(key, 'level', level)
-            writeUserInfoToMySQL(fingerprint, level, accesskey, float(score), timestamp)
-        pipe.execute()
+    pipe = ipcredit_red_cli.pipeline(transaction=True)
+    for ip, user in score_dict.items():
+        zone = querymmdb(ip)
+        score = user.score
+        hosts = []
+        for h in user.host:
+            hosts.append(h)
+        pipe.hset(ip, 'hosts', json.dumps(hosts, ensure_ascii=False))
+        pipe.hset(ip, 'score', score)
+        pipe.hset(ip, 'zone', zone)
+    pipe.execute()
 
 def write_activity_score(score_dict, date):
     dirname = os.path.dirname(os.path.realpath(__file__))
@@ -108,18 +120,6 @@ def write_activity_score(score_dict, date):
             score_file.write(record)
 
     score_file.close()
-
-def accesskey_port_num():
-    result = {}
-    keys = []
-    for key in portnum_red_cli.scan_iter():
-        keys.append(key)
-    if keys is not None:
-        for accesskey in keys:
-            json_data = portnum_red_cli.get(accesskey)
-            decoded = json.loads(json_data)
-            result[accesskey] = len(decoded['tcp'])
-    return result
 
 class UserActivity():
     def __init__(self, date_list):
@@ -133,59 +133,37 @@ class UserActivity():
             if history_stats is not None:
                 self.users = history_stats
 
-        port = accesskey_port_num()
-        if port is not None:
-            self.portNum = port
-
-    def UpdateAcitivity(self, logMsgList):
-        for i, record in enumerate(logMsgList):
-            if 'fingerprint' not in record:
-                return
-
-            fingerprint = record['fingerprint']
-            accesskey = record['accesskey']
-            if accesskey in self.users:
-                if fingerprint in self.users[accesskey]:
-                    blacktime = fingerprint_red_cli.hget(fingerprint, 'blacktime')
-                    if blacktime is not None:
-                        orig = datetime.datetime.fromtimestamp(int(blacktime))
-                        limit  = orig + datetime.timedelta(days=3)
-                        if datetime.datetime.now() < limit:
-                            continue
-                    user = self.users[accesskey][fingerprint]
-                else:
-                    user = User()
-                if accesskey in self.portNum:
-                    user.target_port_total = self.portNum[accesskey]
-                user.DailyStats(record)
-                self.users[accesskey][fingerprint] = user
+    def UpdateAcitivity(self, records):
+        for ip in records.keys():
+            record = records[ip]
+            if ip in self.users:
+                user = self.users[ip]
             else:
-                self.users[accesskey] = {}
                 user = User()
-                user.DailyStats(record)
-                self.users[accesskey][fingerprint] = user
+            user.DailyStats(record)
+            self.users[ip] = user
 
     def Run(self):
-        self.scores = {}
-        for day in self.date_list:
-            logger.info('beginning analysis %s tjkd app log' % day)
+        for date in self.date_list:
+            #logger.info('beginning analysis %s tjkd app log' % date)
+            print('beginning analysis %s tjkd app log' % date)
             start = time.time()
-            result_list = queryfromes("tjkd-app-{}".format(day))
+            index = 'ngx_error_log_%04d_%02d_%02d' %(date.year, date.month, date.day)
+            result_list = queryfromes(index)
             self.UpdateAcitivity(result_list)
     
-            for accesskey, group in self.users.items():
-                if accesskey not in self.scores:
-                    self.scores[accesskey] = {}
-                for fingerprint, user in group.items():
-                    user.UpdateStats() 
-                    user.Score()
-                    user.ClearDailyStats()
-                    self.scores[accesskey][fingerprint] = user
-            
-            write_activity_score_to_redies(self.scores)
+            scores = {}
+            for ip in self.users.keys():
+                user = self.users[ip]
+                user.UpdateStats() 
+                score = user.Score()
+                scores[ip] = user
+                            
+            write_activity_score_to_redies(scores)
             done = time.time()
             elapsed = done - start
-            logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))
+            #logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
+            print('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
 
         if len(self.date_list) != 0:
             delHistoryDateFile(DAT_PATH)

@@ -3,44 +3,20 @@ import json
 from elasticsearch import Elasticsearch
 
 # Define config
-HOST = "172.16.100.444"
+HOST = "172.16.100.44"
 PORT = 9201
 TIMEOUT = 1000
-DOC_TYPE = "tjkd_app_log"
+DOC_TYPE = "ngx_error_log"
 
 BODY = {
-    'size': 0,
-    'aggs': {
-        'agg_fingerprint': {
-            'terms': {
-                'field': "fingerprint",
-                'size': 2147483647
-            },
-            'aggs': {
-                'day_online_time': {
-                    'sum': {
-                        'field': "session_time"
-                    }
-                },
-                'target_port_num': {
-                    'cardinality': {
-                        'field': "target_port"
-                    }
-                },
-                'timestamp': {
-                    'min': {
-                        'field': "Timestamp"
-                    }
-                },
-                'accesskey': {
-                    'terms': {
-                        'field': "accesskey",
-                        'size': 1
-                    }
-                }
+    'size': 10000,
+    "query": {
+        "wildcard": {
+            "error_msg": {
+                "value": "*kfirewall*"
             }
-         }
-    }
+        }
+     }
 }
 
 # Init Elasticsearch instance
@@ -54,36 +30,64 @@ es = Elasticsearch(
     timeout=TIMEOUT
 )
 
-# Process hits here
-def process_hits(hits):
-    result = []
-    for item in hits:
-        tmp = {}
-        tmp['fingerprint'] = item['key']
-        tmp['day_access_count'] = item['doc_count']
-        tmp['accesskey'] = item['accesskey']['buckets'][0]['key']
-        tmp['day_online_time'] = item['day_online_time']['value']
-        tmp['target_port_num'] = item['target_port_num']['value']
-        tmp['timestamp'] = item['timestamp']['value_as_string']
-        result.append(tmp)
+def getIP(errorMsg):
+   splits = errorMsg.split(',') 
+   if len(splits) > 3:
+       clientIP = splits[2]
+       if clientIP is not None:
+           info = clientIP.split(': ')
+           return info[1]
 
-    return result
+# Process hits here
+def process_hits(hits, result):
+    for item in hits:
+        source = item['_source']
+        hostname = source['hostname']
+        host = source['host']
+        error_msg = source['error_msg']
+        ip = getIP(error_msg)
+        if ip  not in result.keys():
+            result[ip] = {'hostname': set([hostname]) , 'host':set([host]), 'count': 1}
+        else:
+            result[ip]['count'] = result[ip]['count'] + 1
+            result[ip]['hostname'].add(hostname)
+            result[ip]['host'].add(host)
+
+        #print("result['ip']': " + str(result[ip]['count']))
+        #print("result['ip']': " + str(len(result[ip]['hostname'])))
 
 
 def queryfromes(index):
     # Check index exists
     if not es.indices.exists(index=index):
-        logg.info("index " + index + " not exists")
+        print("index not exists")
         return
 
+    result = {}
     # Init scroll by search
-    data = es.search(
+    page = es.search(
         index=index,
         doc_type=DOC_TYPE,
+        scroll = '4m',
+        size = 10000,
         body=BODY
     )
 
-    # Befor scroll, process current batch of hits
-    if data is not None:
-        return process_hits(data['aggregations']['agg_fingerprint']['buckets'])
-    return
+    sid = page['_scroll_id']
+    scroll_size = page['hits']['total']
+    process_hits(page['hits']['hits'], result)
+
+    # start scrolling
+    while(scroll_size > 0):
+        print "Scrolling..."
+        page = es.scroll(scroll_id = sid, scroll ='2m')
+        # update the scroll id
+        sid = page['_scroll_id']
+
+        scroll_size = len(page['hits']['hits'])
+        #count = count + scroll_size
+        process_hits(page['hits']['hits'], result)
+        #print(count)
+    return result
+
+#queryfromes('ngx_error_log_2018_08_28')

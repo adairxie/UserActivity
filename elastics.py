@@ -1,6 +1,14 @@
 # coding:utf-8
 import json
+from utils import logger
+
+from multiprocessing import Pool, Manager
+from elasticsearch_dsl import Search
 from elasticsearch import Elasticsearch
+
+# for elasticsearch sliced scroll
+SLICES = 10
+
 
 # Define config
 HOST = "172.16.100.44"
@@ -8,27 +16,7 @@ PORT = 9201
 TIMEOUT = 1000
 DOC_TYPE = "ngx_error_log"
 
-BODY = {
-    'size': 10000,
-    "query": {
-        "wildcard": {
-            "error_msg": {
-                "value": "*kfirewall*"
-            }
-        }
-     }
-}
-
 # Init Elasticsearch instance
-es = Elasticsearch(
-    [
-        {
-            'host': HOST,
-            'port': PORT
-        }
-    ],
-    timeout=TIMEOUT
-)
 
 def getIP(errorMsg):
    splits = errorMsg.split(',') 
@@ -38,56 +26,48 @@ def getIP(errorMsg):
            info = clientIP.split(': ')
            return info[1]
 
-# Process hits here
-def process_hits(hits, result):
-    for item in hits:
-        source = item['_source']
-        hostname = source['hostname']
-        host = source['host']
-        error_msg = source['error_msg']
-        ip = getIP(error_msg)
-        if ip  not in result.keys():
-            result[ip] = {'hostname': set([hostname]) , 'host':set([host]), 'count': 1}
-        else:
-            result[ip]['count'] = result[ip]['count'] + 1
-            result[ip]['hostname'].add(hostname)
-            result[ip]['host'].add(host)
+def dump_slice(args):
+    index = args[0]
+    slice_no = args[1]
+    result = []
 
-        #print("result['ip']': " + str(result[ip]['count']))
-        #print("result['ip']': " + str(len(result[ip]['hostname'])))
+    try:
+        client = Elasticsearch([{'host': HOST, 'port': PORT}], timeout=TIMEOUT)
 
+        s = Search(using=client, index=index, doc_type=DOC_TYPE).query('wildcard', error_msg='*kfirewall*')
+        s = s.extra(slice={"id":slice_no, "max":SLICES})
+        count = 0
+        for resp in s.params(scroll='4m').scan():
+            host = resp['host']
+            error_msg = resp['error_msg']
+            timestamp = resp['Timestamp']
+            ip = getIP(error_msg)
+            if ip is not None:
+                result.append((ip, host, timestamp))
+            count += 1
+        print(count)
+        return result
+    except Exception, e:
+        logger.info('search elasticsearch failed, err:%s' % str(e))
 
 def queryfromes(index):
     # Check index exists
-    if not es.indices.exists(index=index):
-        print("index not exists")
-        return
 
     result = {}
-    # Init scroll by search
-    page = es.search(
-        index=index,
-        doc_type=DOC_TYPE,
-        scroll = '4m',
-        size = 10000,
-        body=BODY
-    )
+    args = []
+    for slice_no in range(SLICES):
+        args.append((index, slice_no, result))
 
-    sid = page['_scroll_id']
-    scroll_size = page['hits']['total']
-    process_hits(page['hits']['hits'], result)
-
-    # start scrolling
-    while(scroll_size > 0):
-        print "Scrolling..."
-        page = es.scroll(scroll_id = sid, scroll ='2m')
-        # update the scroll id
-        sid = page['_scroll_id']
-
-        scroll_size = len(page['hits']['hits'])
-        #count = count + scroll_size
-        process_hits(page['hits']['hits'], result)
-        #print(count)
+    pool = Pool(SLICES)
+    data = pool.map(dump_slice, args)
+    pool.close()
+    pool.join()
+    for d in data:
+        for ipmeta in d:
+            ip = ipmeta[0]
+            host = ipmeta[1]
+            timestamp = ipmeta[2]
+            if ip not in result:
+                result[ip] = {'count':0, 'host':host, 'timestamp':timestamp}
+            result[ip]['count'] += 1
     return result
-
-#queryfromes('ngx_error_log_2018_08_28')

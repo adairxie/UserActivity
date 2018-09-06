@@ -33,37 +33,42 @@ except maxminddb.InvalidDatabaseError, e:
     print('open %s failed, err msg:%s' % (MMDB, str(e)))
     sys.exit(1)
 
-# Connect to mysql
-connection = pymysql.connect(host='127.0.0.1',
-                       user='root',
-                       passwd='dbadmin',
-                       db='usercredit',
-                       charset='utf8mb4',
-                       cursorclass=pymysql.cursors.DictCursor)
-
-def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
-    with connection.cursor() as cursor:
-        # Create a new record
-        sql = """
-            INSERT INTO activity
-                (fp, level, accesskey, score, timestamp)
-            VALUES
-                (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                level = VALUES(level),
-                timestamp = VALUES(timestamp),
-                score = VALUES(score);
-            """
-        cursor.execute(sql, (fp, level, accesskey, score, timestamp))
-
-    connection.commit()
-
 try:
-    ipcredit_pool = redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWD)
+    ipcredit_pool = redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWD, socket_connect_timeout=120, socket_keepalive=True)
     ipcredit_red_cli = redis.Redis(connection_pool=ipcredit_pool)
 except Exception, e:
     print('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
+
+try:
+    connection = pymysql.connect(host='127.0.0.1',
+                           user='root',
+                           passwd='dbadmin',
+                           db='ipcredit',
+                           charset='utf8mb4',
+                           cursorclass=pymysql.cursors.DictCursor)
+except Exception, e:
+    print('connect mysql redis failed, err msg:%s' % str(e))
+    sys.exit(1)
+
+def save_to_mysql(ip, hosts, score, zone, timestamp):
+    try:
+        with connection.cursor() as cursor:
+            # Create a new record
+            sql = """
+                INSERT INTO credit 
+                    (ip, hosts, score, zone, timestamp)
+                VALUES
+                    (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    score = VALUES(score);
+                """
+            cursor.execute(sql, (ip, hosts, score, zone, timestamp))
+
+        connection.commit()
+    except Exception, e:
+        logger.info('save ip credit information to mysql failed, err %s' % str(e))
+
 
 def getLastestDatFile(path):
     '''get the lastest stat file'''
@@ -97,29 +102,16 @@ def querymmdb(ip):
     return None
 
 
-def write_activity_score_to_redies(score_dict):
-    pipe = ipcredit_red_cli.pipeline(transaction=True)
-    for ip, user in score_dict.items():
-        zone = querymmdb(ip)
-        score = user.score
-        hosts = []
-        for h in user.host:
-            hosts.append(h)
-        pipe.hset(ip, 'hosts', json.dumps(hosts, ensure_ascii=False))
+def save_to_redis(ip, host, score, zone):
+    try:
+        pipe = ipcredit_red_cli.pipeline(transaction=True)
+        if host != "":
+            pipe.hset(ip, 'host', host)
         pipe.hset(ip, 'score', score)
         pipe.hset(ip, 'zone', zone)
-    pipe.execute()
-
-def write_activity_score(score_dict, date):
-    dirname = os.path.dirname(os.path.realpath(__file__))
-    filename = dirname +'/scores.txt'
-    score_file = open(filename, 'a+')
-    for accesskey, score in score_dict.items():
-        for fingerprint, user_score in score.items():
-            record = '%s    %s    %s    %s\n' %(date, accesskey, fingerprint, user_score)
-            score_file.write(record)
-
-    score_file.close()
+        pipe.execute()
+    except Exception, e:
+        logger.info('save ip credit information to redis failed, err %s' % str(e))
 
 class UserActivity():
     def __init__(self, date_list):
@@ -145,25 +137,31 @@ class UserActivity():
 
     def Run(self):
         for date in self.date_list:
-            #logger.info('beginning analysis %s tjkd app log' % date)
-            print('beginning analysis %s tjkd app log' % date)
+            logger.info('beginning analysis %s tjkd app log' % date)
             start = time.time()
             index = 'ngx_error_log_%04d_%02d_%02d' %(date.year, date.month, date.day)
-            result_list = queryfromes(index)
-            self.UpdateAcitivity(result_list)
+            todayrecords = queryfromes(index)
+            self.UpdateAcitivity(todayrecords)
     
-            scores = {}
             for ip in self.users.keys():
                 user = self.users[ip]
                 user.UpdateStats() 
+
+                # some fields to save
                 score = user.Score()
-                scores[ip] = user
+                zone = querymmdb(ip)
+                host = user.host
+                jsonedzone = json.dumps(zone, ensure_ascii=False)
+                timestamp = user.timestamp
+
+                # clear daily statistics
+                user.ClearDailyStats()
+                save_to_redis(ip, host, score, jsonedzone)
+                save_to_mysql(ip, host, score, jsonedzone, timestamp)
                             
-            write_activity_score_to_redies(scores)
             done = time.time()
             elapsed = done - start
-            #logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
-            print('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
+            logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
 
         if len(self.date_list) != 0:
             delHistoryDateFile(DAT_PATH)

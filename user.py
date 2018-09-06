@@ -13,15 +13,20 @@ class User():
         self.total_kfirewall_count = 0.0
         self.today_online = 0.0
         self.total_online_days = 0.0
+        self.timestamp = ""
         self.score = 0.0
             
     def DailyStats(self, record):
         '''每天需要统计的数据'''
         self.today_online = 1
-        self.target_hostname_count = len(record['hostname']) 
         self.day_kfirewall_count = record['count']
         self.total_online_days += 1
         self.host = record['host']
+        self.timestamp = record['timestamp']
+
+    def ClearDailyStats(self):
+        self.today_online = 0.0
+        self.day_kfirewall_count = 0.0
 
     def UpdateStats(self):
         if len(self.month_kfirewall_days_list) >= sysconfig.THRESHOLD_DAYS:

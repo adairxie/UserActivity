@@ -126,7 +126,7 @@ class UserActivity():
                 self.users = history_stats
 
     def UpdateAcitivity(self, records):
-        for ip in records.keys():
+        for ip in records:
             record = records[ip]
             if ip in self.users:
                 user = self.users[ip]
@@ -143,7 +143,7 @@ class UserActivity():
             todayrecords = queryfromes(index)
             self.UpdateAcitivity(todayrecords)
     
-            for ip in self.users.keys():
+            for ip in self.users:
                 user = self.users[ip]
                 user.UpdateStats() 
 

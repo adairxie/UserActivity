@@ -27,6 +27,8 @@ class User():
     def ClearDailyStats(self):
         self.today_online = 0.0
         self.day_kfirewall_count = 0.0
+        self.month_kfirewall_day_num = 0.0
+        self.month_kfirewall_count = 0.0
 
     def UpdateStats(self):
         if len(self.month_kfirewall_days_list) >= sysconfig.THRESHOLD_DAYS:

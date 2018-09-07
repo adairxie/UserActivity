@@ -34,7 +34,13 @@ except maxminddb.InvalidDatabaseError, e:
     sys.exit(1)
 
 try:
-    ipcredit_pool = redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWD, socket_connect_timeout=120, socket_keepalive=True)
+    ipcredit_pool = redis.ConnectionPool(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB,
+            password=REDIS_PASSWD,
+            socket_connect_timeout=120,
+            socket_keepalive=True)
     ipcredit_red_cli = redis.Redis(connection_pool=ipcredit_pool)
 except Exception, e:
     print('connect redis failed, err msg:%s' % str(e))
@@ -103,15 +109,16 @@ def querymmdb(ip):
 
 
 def save_to_redis(ip, host, score, zone):
-    try:
-        pipe = ipcredit_red_cli.pipeline(transaction=True)
-        if host != "":
-            pipe.hset(ip, 'host', host)
-        pipe.hset(ip, 'score', score)
-        pipe.hset(ip, 'zone', zone)
-        pipe.execute()
-    except Exception, e:
-        logger.info('save ip credit information to redis failed, err %s' % str(e))
+    if ip != "":
+        try:
+            pipe = ipcredit_red_cli.pipeline(transaction=True)
+            if host != "":
+                pipe.hset(ip, 'host', host)
+            pipe.hset(ip, 'score', score)
+            pipe.hset(ip, 'zone', zone)
+            pipe.execute()
+        except Exception, e:
+            logger.info('save ip credit information to redis failed, err %s' % str(e))
 
 class UserActivity():
     def __init__(self, date_list):

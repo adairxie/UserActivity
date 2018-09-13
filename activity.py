@@ -67,6 +67,8 @@ def save_to_mysql(ip, hosts, score, zone, timestamp):
                 VALUES
                     (%s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
+                    hosts = VALUES(hosts),
+                    timestamp = VALUES(timestamp),
                     score = VALUES(score);
                 """
             cursor.execute(sql, (ip, hosts, score, zone, timestamp))

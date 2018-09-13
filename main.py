@@ -25,11 +25,6 @@ def generate_dates(start_date, end_date):
         current_date += td
     return date_list
 
-
-parser = optparse.OptionParser()
-parser.add_option('-s', '--start', action='store', dest="start_date",
-    help="calculate user's activity from this day, for example: 2018-05-01")
-
 def parseDatesFromCmdLine():
     today = datetime.date.today()
     start_date = today - datetime.timedelta(days=1)
@@ -49,6 +44,10 @@ def timer_job():
     userScore.Run()
 
 if __name__ == '__main__':
+    parser = optparse.OptionParser()
+    parser.add_option('-s', '--start', action='store', dest="start_date",
+        help="calculate user's activity from this day, for example: 2018-05-01")
+
     options, args = parser.parse_args()
     start_date = options.start_date
 

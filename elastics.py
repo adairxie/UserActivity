@@ -2,17 +2,19 @@
 import json
 from utils import logger
 
+from conf import sysconfig
+
 from multiprocessing import Pool, Manager
 from elasticsearch_dsl import Search
 from elasticsearch import Elasticsearch
 
 # for elasticsearch sliced scroll
-SLICES = 10
+SLICES = sysconfig.ES_THREADS
 
 
 # Define config
-HOST = "172.16.100.44"
-PORT = 9201
+HOST = sysconfig.ES_HOST
+PORT = sysconfig.ES_PORT
 TIMEOUT = 1000
 DOC_TYPE = "ngx_error_log"
 

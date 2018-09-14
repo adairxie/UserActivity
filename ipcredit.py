@@ -74,5 +74,5 @@ if __name__ == '__main__':
     userScore.Run()
 
     sched = BlockingScheduler()
-    sche.add_job(timer_job, "interval", hours=23)
+    sched.add_job(timer_job, "interval", hours=23)
     sched.start()

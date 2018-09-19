@@ -1,5 +1,6 @@
 # coding:utf-8
 import json
+import socket
 from utils import logger
 
 from conf import sysconfig
@@ -38,16 +39,17 @@ def dump_slice(args):
 
         s = Search(using=client, index=index, doc_type=DOC_TYPE).query('wildcard', error_msg='*kfirewall*')
         s = s.extra(slice={"id":slice_no, "max":SLICES})
-        count = 0
         for resp in s.params(scroll='4m').scan():
             host = resp['host']
             error_msg = resp['error_msg']
             timestamp = resp['Timestamp']
             ip = getIP(error_msg)
             if ip is not None:
-                result.append((ip, host, timestamp))
-            count += 1
-        print(count)
+                try:
+                    socket.inet_aton(ip)
+                    result.append((ip, host, timestamp))
+                except socket.error:
+                    continue
         return result
     except Exception, e:
         logger.info('search elasticsearch failed, err:%s' % str(e))

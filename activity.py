@@ -128,7 +128,8 @@ def accesskey_port_num():
         for accesskey in keys:
             json_data = portnum_red_cli.get(accesskey)
             decoded = json.loads(json_data)
-            result[accesskey] = len(decoded['tcp'])
+            if 'tcp' in decoded:
+                result[accesskey] = len(decoded['tcp'])
     return result
 
 class UserActivity():

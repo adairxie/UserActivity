@@ -98,11 +98,7 @@ def concat_list(x, y):
 def array_append(val):
     return reduce (concat_list, val)
 
-def array_append_zero(val):
-    return val + 0
-
 flattenUDF = F.udf(array_append, T.ArrayType(T.IntegerType()))
-appendUDF = F.udf(array_append_zero, T.ArrayType(T.IntegerType()))
 
 def getLastestDatFile(path):
     '''get the lastest stat file'''
@@ -172,6 +168,26 @@ Record = Row(\
         'kfirewall_count'
         )
 
+def keep_monthly_window(x):
+    kfirewall_days = x.kfirewall_days
+    if len(kfirewall_days) >= 30:
+        del kfirewall_days[0]
+
+    kfirewall_count = x.kfirewall_count
+    if len(kfirewall_count) >= 30:
+        del kfirewall_count[0]
+
+    return x.ip, x.host, x.timestamp, x.total_count, x.total_online, kfirewall_days, kfirewall_count
+
+def update_unpresent_records(x):
+    kfirewall_days = x[5]
+    kfirewall_days.append(0)
+
+    kfirewall_count = x[6]
+    kfirewall_count.append(0)
+
+    return (x[0], x[1], x[2], x[3], x[4], kfirewall_days, kfirewall_count)
+
 class UserActivity():
     def __init__(self, date_list):
         self.users = {}
@@ -179,38 +195,47 @@ class UserActivity():
 
     def update_activity(self, records):
         history_df = slc.createDataFrame([
-            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 1], [100, 300]),
             Record('109.65.46.192', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
-            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 0], [100]),
             Record('109.65.46.194', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
             Record('109.65.46.195', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
             ])
+        history_updated_rdd = history_df.rdd.map(keep_monthly_window)
+        history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
+        history_updated_df = history_updated_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
 
         # 当天出现的ip
         current_records = []
-        #for record in records:
-        #    ip = record['ip']
-        #    if ip is None:
-        #        return
-        #    try:
-        #        socket.inet_aton(ip)
-        #        current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'],\
-        #                                                record['count'], 1, [1], [record['count']])) 
-        #        break
-        #    except socket.error:
-        #        continue
-        current_records.append(Record('109.65.46.191', 'www.google.com', '2018-07-02 18:00:01', 10, 1, [1], [10]))
-        current_records.append(Record('109.65.46.192', 'www.google.com', '2018-07-02 18:00:02', 10, 1, [1], [10]))
-        current_records.append(Record('109.65.46.196', 'www.google.com', '2018-07-02 18:00:03', 10, 1, [1], [10]))
+        for record in records:
+            ip = record['ip']
+            if ip is None:
+                return
+            try:
+                socket.inet_aton(ip)
+                current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'],\
+                                                        record['count'], 1, [1], [record['count']])) 
+                break
+            except socket.error:
+                continue
 
         current_df = slc.createDataFrame(current_records) 
-        # 当天未出现的ip, 计算差集
-        old_df = history_df.subtract(current_df)
-        old_updated_rdd = old_df.rdd.map(lambda x: (x.ip, x.host, x.timestamp, x.total_count, x.total_online, x.kfirewall_days + [0], x.kfirewall_count + [0]))
-        old_updated_df = old_updated_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
+        current_pairrdd = current_df.rdd.map(lambda x: (x[0], x))
+        # 历史记录中当天未出现的ip, 计算差集
+        unpresent_pairrdd = history_updated_pairrdd.subtractByKey(current_pairrdd)
+        present_pairrdd = history_updated_pairrdd.subtractByKey(unpresent_pairrdd)
+
+        old_present_rdd = present_pairrdd.map(lambda x: x[1])
+        old_unpresent_rdd = unpresent_pairrdd.map(lambda x: x[1]).map(update_unpresent_records)
+
+        old_present_df = old_present_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
+        old_unpresent_df = old_unpresent_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
+
+        #print(old_present_df.show())
+        #print(old_unpresent_df.show())
 
         # 更新所有记录的总的次数，在线天数，最近三十天的数据
-        tmp_df = current_df.unionAll(old_updated_df)
+        tmp_df = current_df.unionAll(old_unpresent_df).unionAll(old_present_df)
         ipgrouped = tmp_df.groupBy('ip').agg(F.max('host').alias('host'),\
                 F.max('timestamp').alias('timestamp'), F.sum('total_count').alias('total_count'),\
                 F.sum('total_online').alias('total_online'),\

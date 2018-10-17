@@ -25,8 +25,6 @@ def generate_dates(start_date, end_date):
         current_date += td
     return date_list
 
-
-
 def parseDatesFromCmdLine():
     today = datetime.date.today()
     start_date = today - datetime.timedelta(days=1)
@@ -44,6 +42,7 @@ def timer_job():
     date_list = generate_dates(start_date, end_date)
     userScore = UserActivity(date_list)
     userScore.Run()
+    del userScore
 
 if __name__ == '__main__':
     parser = optparse.OptionParser()
@@ -72,6 +71,7 @@ if __name__ == '__main__':
 
     userScore = UserActivity(date_list)
     userScore.Run()
+    del userScore
 
     sched = BlockingScheduler()
     sched.add_job(timer_job, "interval", hours=23)

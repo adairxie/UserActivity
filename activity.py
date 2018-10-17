@@ -6,6 +6,7 @@ import json
 import time
 import redis
 import math
+import socket
 import pickle
 import pymysql
 import datetime
@@ -15,9 +16,20 @@ from pathlib import Path
 from utils import logger
 
 from user import *
-from elastics import queryfromes
 from conf import sysconfig
 
+import findspark
+findspark.init()
+
+from pyspark import SparkContext
+from pyspark.sql import Row
+from pyspark.sql import SQLContext, HiveContext
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+sc = SparkContext(master="local[2]", appName="IPCredit")
+sc.setLogLevel("ERROR")
+slc = HiveContext(sc)
 
 REDIS_HOST = sysconfig.REDIS_HOST
 REDIS_PORT = sysconfig.REDIS_PORT
@@ -30,7 +42,7 @@ MMDB = sysconfig.MMDB
 try:
     mmdb_reader = maxminddb.open_database(MMDB)
 except maxminddb.InvalidDatabaseError, e:
-    print('open %s failed, err msg:%s' % (MMDB, str(e)))
+    #print('open %s failed, err msg:%s' % (MMDB, str(e)))
     sys.exit(1)
 
 try:
@@ -78,6 +90,20 @@ def save_to_mysql(ip, hosts, score, zone, timestamp):
         logger.info('save ip credit information to mysql failed, err %s' % str(e))
 
 
+def concat_list(x, y):
+    val = x + y
+    if len(val) > 30:
+        del val[0]
+    return val
+def array_append(val):
+    return reduce (concat_list, val)
+
+def array_append_zero(val):
+    return val + 0
+
+flattenUDF = F.udf(array_append, T.ArrayType(T.IntegerType()))
+appendUDF = F.udf(array_append_zero, T.ArrayType(T.IntegerType()))
+
 def getLastestDatFile(path):
     '''get the lastest stat file'''
     f_list = os.listdir(path)
@@ -122,36 +148,100 @@ def save_to_redis(ip, host, score, zone):
         except Exception, e:
             logger.info('save ip credit information to redis failed, err %s' % str(e))
 
+def getIP(row):
+    result = {}
+    result['host'] = row.host
+    result['Timestamp'] = row.Timestamp
+
+    msg = row.error_msg
+    splits = msg.split(',')
+    if len(splits) > 3:
+        clientIP = splits[2]
+        if clientIP is not None:
+            ip = clientIP.split(': ')
+            result['ip'] = ip[1]
+    return result
+
+Record = Row(\
+        'ip',\
+        'host',\
+        'timestamp',\
+        'total_count',\
+        'total_online',\
+        'kfirewall_days',\
+        'kfirewall_count'
+        )
+
 class UserActivity():
     def __init__(self, date_list):
+        self.users = {}
         self.date_list = date_list
 
-        self.users = {}
-        historydata = getLastestDatFile(DAT_PATH)
-        if historydata is not None and  Path(historydata).is_file():
-            history = open(historydata, 'rb')
-            history_stats = pickle.load(history)
-            if history_stats is not None:
-                self.users = history_stats
+    def update_activity(self, records):
+        history_df = slc.createDataFrame([
+            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.192', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.194', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.195', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            ])
 
-    def UpdateAcitivity(self, records):
-        for ip in records:
-            record = records[ip]
-            if ip in self.users:
-                user = self.users[ip]
-            else:
-                user = User()
-            user.DailyStats(record)
-            self.users[ip] = user
+        # 当天出现的ip
+        current_records = []
+        #for record in records:
+        #    ip = record['ip']
+        #    if ip is None:
+        #        return
+        #    try:
+        #        socket.inet_aton(ip)
+        #        current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'],\
+        #                                                record['count'], 1, [1], [record['count']])) 
+        #        break
+        #    except socket.error:
+        #        continue
+        current_records.append(Record('109.65.46.191', 'www.google.com', '2018-07-02 18:00:01', 10, 1, [1], [10]))
+        current_records.append(Record('109.65.46.192', 'www.google.com', '2018-07-02 18:00:02', 10, 1, [1], [10]))
+        current_records.append(Record('109.65.46.196', 'www.google.com', '2018-07-02 18:00:03', 10, 1, [1], [10]))
 
+        current_df = slc.createDataFrame(current_records) 
+        # 当天未出现的ip, 计算差集
+        old_df = history_df.subtract(current_df)
+        old_updated_rdd = old_df.rdd.map(lambda x: (x.ip, x.host, x.timestamp, x.total_count, x.total_online, x.kfirewall_days + [0], x.kfirewall_count + [0]))
+        old_updated_df = old_updated_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
+
+        # 更新所有记录的总的次数，在线天数，最近三十天的数据
+        tmp_df = current_df.unionAll(old_updated_df)
+        ipgrouped = tmp_df.groupBy('ip').agg(F.max('host').alias('host'),\
+                F.max('timestamp').alias('timestamp'), F.sum('total_count').alias('total_count'),\
+                F.sum('total_online').alias('total_online'),\
+                F.collect_list('kfirewall_days').alias('kfirewall_days'),\
+                F.collect_list('kfirewall_count').alias('kfirewall_count'))\
+                .select('ip', 'host', 'timestamp', 'total_count', 'total_online',\
+                flattenUDF('kfirewall_days').alias('kfirewall_days'),\
+                flattenUDF('kfirewall_count').alias('kfirewall_count'),\
+                )
+
+        print(ipgrouped.show())
+        print('######################### end #####################')
+    
     def Run(self):
         for date in self.date_list:
-            logger.info('beginning analysis %s tjkd app log' % date)
+            logger.info('beginning analysis %s ngx error log' % date)
             start = time.time()
-            index = 'ngx_error_log_%04d_%02d_%02d' %(date.year, date.month, date.day)
-            todayrecords = queryfromes(index)
-            self.UpdateAcitivity(todayrecords)
-    
+
+            df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/ngx_error_ext/dt={}".format(date))
+            filtered = df.filter(df.error_msg.like('%add_ipset_to_kernel_firewall%')).select(df.error_msg, df.Timestamp, df.host)
+
+            rdd = filtered.rdd.map(getIP).toDF()\
+                    .groupBy('ip').agg({'ip':'count', 'Timestamp':'first', 'host':'first'})\
+                    .withColumnRenamed('count(ip)', 'count')\
+                    .withColumnRenamed('first(Timestamp)', 'Timestamp')\
+                    .withColumnRenamed('first(host)', 'host')
+            records = rdd.collect()
+            self.update_activity(records)
+            print('~~~~~~~~~~~~~~~~~~~~~ end ~~~~~~~~~~~~~~~~~~~~')
+            return
+
             for ip in self.users:
                 user = self.users[ip]
                 user.UpdateStats() 
@@ -160,21 +250,16 @@ class UserActivity():
                 score = user.Score()
                 zone = querymmdb(ip)
                 host = user.host
+                if host is None:
+                    host = ''
                 jsonedzone = json.dumps(zone, ensure_ascii=False)
                 timestamp = user.timestamp
 
                 # clear daily statistics
-                user.ClearDailyStats()
-                save_to_redis(ip, host, score, jsonedzone)
-                save_to_mysql(ip, host, score, jsonedzone, timestamp)
+                #save_to_redis(ip, host, score, jsonedzone)
+                #save_to_mysql(ip, host, score, jsonedzone, timestamp)
                             
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
-
-        if len(self.date_list) != 0:
-            delHistoryDateFile(DAT_PATH)
-            filename = '%s/stats-%s.dat' % (DAT_PATH, datetime.date.today())
-            outfile = open(filename, 'wb')
-            pickle.dump(self.users, outfile)
-            outfile.close()
+            self.users = {}

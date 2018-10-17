@@ -22,14 +22,9 @@ class User():
         self.day_kfirewall_count = record['count']
         self.total_online_days += 1
         self.host = record['host']
-        self.timestamp = record['timestamp']
+        self.timestamp = record['Timestamp']
 
-    def ClearDailyStats(self):
-        self.today_online = 0.0
-        self.day_kfirewall_count = 0.0
-        self.month_kfirewall_day_num = 0.0
-        self.month_kfirewall_count = 0.0
-
+    
     def UpdateStats(self):
         if len(self.month_kfirewall_days_list) >= sysconfig.THRESHOLD_DAYS:
             del self.month_kfirewall_days_list[0]
@@ -48,6 +43,12 @@ class User():
 
         # 更新总的在线时间
         self.total_kfirewall_count += self.day_kfirewall_count
+        # clear daily stats
+        self.today_online = 0.0
+        self.day_kfirewall_count = 0.0
+        self.month_kfirewall_day_num = 0.0
+        self.month_kfirewall_count = 0.0
+
 
     def Score(self):
         day_avg_kfirewall_count_ratio = self.day_avg_kfirewall_count / sysconfig.DAY_KFIREWALL_COUNT_LIMIT

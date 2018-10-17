@@ -92,7 +92,7 @@ def save_to_mysql(ip, hosts, score, zone, timestamp):
 
 def concat_list(x, y):
     val = x + y
-    if len(val) > 30:
+    if len(val) > sysconfig.THRESHOLD_DAYS:
         del val[0]
     return val
 def array_append(val):
@@ -163,11 +163,11 @@ ColumnName = ['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewa
 
 def keep_monthly_window(x):
     kfirewall_days = x.kfirewall_days
-    if len(kfirewall_days) >= 30:
+    if len(kfirewall_days) >= sysconfig.THRESHOLD_DAYS:
         del kfirewall_days[0]
 
     kfirewall_count = x.kfirewall_count
-    if len(kfirewall_count) >= 30:
+    if len(kfirewall_count) >= sysconfig.THRESHOLD_DAYS:
         del kfirewall_count[0]
 
     return x.ip, x.host, x.timestamp, x.total_count, x.total_online, kfirewall_days, kfirewall_count, x.score
@@ -180,6 +180,44 @@ def update_unpresent_records(x):
     kfirewall_count.append(0)
 
     return (x[0], x[1], x[2], x[3], x[4], kfirewall_days, kfirewall_count, x[7])
+
+def calculate_score(x):
+    month_kfirewall_day_num = 0
+    for online in x.kfirewall_days:
+        month_kfirewall_day_num += online
+
+    month_kfirewall_count = 0
+    for count in x.kfirewall_count:
+        month_kfirewall_count += count
+
+    day_avg_kfirewall_count = 0
+    if month_kfirewall_day_num > 0:
+        day_avg_kfirewall_count = month_kfirewall_count / month_kfirewall_day_num
+
+    day_avg_kfirewall_count_ratio = day_avg_kfirewall_count / sysconfig.DAY_KFIREWALL_COUNT_LIMIT
+    if day_avg_kfirewall_count_ratio > 1:
+        day_avg_kfirewall_count_ratio = 1
+    score_day_avg_kfirewall_count = day_avg_kfirewall_count_ratio * 100
+
+    score_month_kfirewall_days = month_kfirewall_day_num / sysconfig.THRESHOLD_DAYS * 100
+
+    month_kfirewall_count_ratio = month_kfirewall_count / sysconfig.MONTH_KFIREWALL_COUNT_LIMIT
+    if month_kfirewall_count_ratio > 1:
+        month_kfirewall_count_ratio = 1
+    score_month_kfirewall_count = month_kfirewall_count_ratio * 100
+
+    total_kfirewall_count_ratio = x.total_count / (x.total_online * sysconfig.DAY_KFIREWALL_COUNT_LIMIT)
+    if total_kfirewall_count_ratio > 1:
+        total_kfirewall_count_ratio = 1
+    score_total_kfirewall_count = total_kfirewall_count_ratio * 100
+
+    score = (score_month_kfirewall_days * sysconfig.weight_month_kfirewall_days
+        + score_day_avg_kfirewall_count * sysconfig.weight_day_avg_kfirewall_count
+        + score_month_kfirewall_count * sysconfig.weight_month_kfirewall_count
+        + score_total_kfirewall_count * sysconfig.weight_total_kfirewall_count)
+
+    score = round((score / sysconfig.TOTAL_SCORE) * 100, 2)
+    return x.ip, x.host, x.timestamp, x.total_count, x.total_online, x.kfirewall_days, x.kfirewall_count, score
 
 class UserActivity():
     def __init__(self, date_list):
@@ -233,8 +271,8 @@ class UserActivity():
                 .select('ip', 'host', 'timestamp', 'total_count', 'total_online',\
                 flattenUDF('kfirewall_days').alias('kfirewall_days'), flattenUDF('kfirewall_count').alias('kfirewall_count'), 'score')
 
-        print(ipgrouped.show())
-        print('######################### end #####################')
+        score_df = ipgrouped.rdd.map(calculate_score).toDF(ColumnName)
+        print(score_df.show())
     
     def Run(self):
         for date in self.date_list:

@@ -158,15 +158,8 @@ def getIP(row):
             result['ip'] = ip[1]
     return result
 
-Record = Row(\
-        'ip',\
-        'host',\
-        'timestamp',\
-        'total_count',\
-        'total_online',\
-        'kfirewall_days',\
-        'kfirewall_count'
-        )
+Record = Row('ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count', 'score')
+ColumnName = ['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count', 'score']
 
 def keep_monthly_window(x):
     kfirewall_days = x.kfirewall_days
@@ -177,7 +170,7 @@ def keep_monthly_window(x):
     if len(kfirewall_count) >= 30:
         del kfirewall_count[0]
 
-    return x.ip, x.host, x.timestamp, x.total_count, x.total_online, kfirewall_days, kfirewall_count
+    return x.ip, x.host, x.timestamp, x.total_count, x.total_online, kfirewall_days, kfirewall_count, x.score
 
 def update_unpresent_records(x):
     kfirewall_days = x[5]
@@ -186,7 +179,7 @@ def update_unpresent_records(x):
     kfirewall_count = x[6]
     kfirewall_count.append(0)
 
-    return (x[0], x[1], x[2], x[3], x[4], kfirewall_days, kfirewall_count)
+    return (x[0], x[1], x[2], x[3], x[4], kfirewall_days, kfirewall_count, x[7])
 
 class UserActivity():
     def __init__(self, date_list):
@@ -195,15 +188,15 @@ class UserActivity():
 
     def update_activity(self, records):
         history_df = slc.createDataFrame([
-            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 1], [100, 300]),
-            Record('109.65.46.192', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
-            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 0], [100]),
-            Record('109.65.46.194', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
-            Record('109.65.46.195', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100]),
+            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 1], [100, 300], 80.12),
+            Record('109.65.46.192', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 100.0),
+            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 0], [100], 93.23),
+            Record('109.65.46.194', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 94.50),
+            Record('109.65.46.195', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 91.50),
             ])
         history_updated_rdd = history_df.rdd.map(keep_monthly_window)
         history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
-        history_updated_df = history_updated_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
+        history_updated_df = history_updated_rdd.toDF(ColumnName)
 
         # 当天出现的ip
         current_records = []
@@ -213,8 +206,7 @@ class UserActivity():
                 return
             try:
                 socket.inet_aton(ip)
-                current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'],\
-                                                        record['count'], 1, [1], [record['count']])) 
+                current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'], record['count'], 1, [1], [record['count']], 0.0))
                 break
             except socket.error:
                 continue
@@ -228,11 +220,8 @@ class UserActivity():
         old_present_rdd = present_pairrdd.map(lambda x: x[1])
         old_unpresent_rdd = unpresent_pairrdd.map(lambda x: x[1]).map(update_unpresent_records)
 
-        old_present_df = old_present_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
-        old_unpresent_df = old_unpresent_rdd.toDF(['ip', 'host', 'timestamp', 'total_count', 'total_online', 'kfirewall_days', 'kfirewall_count'])
-
-        #print(old_present_df.show())
-        #print(old_unpresent_df.show())
+        old_present_df = old_present_rdd.toDF(ColumnName)
+        old_unpresent_df = old_unpresent_rdd.toDF(ColumnName)
 
         # 更新所有记录的总的次数，在线天数，最近三十天的数据
         tmp_df = current_df.unionAll(old_unpresent_df).unionAll(old_present_df)
@@ -240,11 +229,9 @@ class UserActivity():
                 F.max('timestamp').alias('timestamp'), F.sum('total_count').alias('total_count'),\
                 F.sum('total_online').alias('total_online'),\
                 F.collect_list('kfirewall_days').alias('kfirewall_days'),\
-                F.collect_list('kfirewall_count').alias('kfirewall_count'))\
+                F.collect_list('kfirewall_count').alias('kfirewall_count'), F.max('score').alias('score'))\
                 .select('ip', 'host', 'timestamp', 'total_count', 'total_online',\
-                flattenUDF('kfirewall_days').alias('kfirewall_days'),\
-                flattenUDF('kfirewall_count').alias('kfirewall_count'),\
-                )
+                flattenUDF('kfirewall_days').alias('kfirewall_days'), flattenUDF('kfirewall_count').alias('kfirewall_count'), 'score')
 
         print(ipgrouped.show())
         print('######################### end #####################')

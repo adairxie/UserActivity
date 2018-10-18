@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 import os
-import re
 import sys
 import json
 import time
 import redis
-import math
 import socket
-import pickle
 import pymysql
 import datetime
 import maxminddb
@@ -15,7 +12,6 @@ import maxminddb
 from pathlib import Path
 from utils import logger
 
-from user import *
 from conf import sysconfig
 
 import findspark
@@ -131,7 +127,6 @@ def querymmdb(ip):
             return None
     return None
 
-
 def save_to_redis(ip, host, score, zone):
     if ip != "":
         try:
@@ -181,6 +176,18 @@ def update_unpresent_records(x):
 
     return (x[0], x[1], x[2], x[3], x[4], kfirewall_days, kfirewall_count, x[7])
 
+def save_records(x):
+    '''保存统计数据到hdfs、redis、mysql'''
+    ip = x.ip
+    host = x.host
+    zone = querymmdb(x.ip)
+    timestamp = x.timestamp
+    if host is None:
+        host = ''
+    jsonedzone = json.dumps(zone, ensure_ascii=False)
+    #save_to_redis(ip, host, score, jsonedzone)
+    #save_to_mysql(ip, host, score, jsonedzone, timestamp)
+
 def calculate_score(x):
     month_kfirewall_day_num = 0
     for online in x.kfirewall_days:
@@ -221,7 +228,6 @@ def calculate_score(x):
 
 class UserActivity():
     def __init__(self, date_list):
-        self.users = {}
         self.date_list = date_list
 
     def update_activity(self, records):
@@ -273,7 +279,7 @@ class UserActivity():
 
         score_df = ipgrouped.rdd.map(calculate_score).toDF(ColumnName)
         print(score_df.show())
-    
+
     def Run(self):
         for date in self.date_list:
             logger.info('beginning analysis %s ngx error log' % date)
@@ -291,25 +297,7 @@ class UserActivity():
             self.update_activity(records)
             print('~~~~~~~~~~~~~~~~~~~~~ end ~~~~~~~~~~~~~~~~~~~~')
             return
-
-            for ip in self.users:
-                user = self.users[ip]
-                user.UpdateStats() 
-
-                # some fields to save
-                score = user.Score()
-                zone = querymmdb(ip)
-                host = user.host
-                if host is None:
-                    host = ''
-                jsonedzone = json.dumps(zone, ensure_ascii=False)
-                timestamp = user.timestamp
-
-                # clear daily statistics
-                #save_to_redis(ip, host, score, jsonedzone)
-                #save_to_mysql(ip, host, score, jsonedzone, timestamp)
                             
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))
-            self.users = {}

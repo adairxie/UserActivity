@@ -21,6 +21,7 @@ from pyspark import SparkContext
 from pyspark.sql import Row, SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
+from pyspark.sql.utils import AnalysisException
 
 sc = SparkContext(master="local[2]", appName="IPCredit")
 sc.setLogLevel("ERROR")
@@ -183,13 +184,14 @@ def save_records(x):
     '''保存统计数据到hdfs、redis、mysql'''
     ip = x.ip
     host = x.host
+    score = x.score
     zone = querymmdb(x.ip)
     timestamp = x.timestamp
     if host is None:
         host = ''
     jsonedzone = json.dumps(zone, ensure_ascii=False)
-    #save_to_redis(ip, host, score, jsonedzone)
-    #save_to_mysql(ip, host, score, jsonedzone, timestamp)
+    save_to_redis(ip, host, score, jsonedzone)
+    save_to_mysql(ip, host, score, jsonedzone, timestamp)
 
 def calculate_score(x):
     month_kfirewall_day_num = 0
@@ -234,39 +236,47 @@ class UserActivity():
         self.date_list = date_list
 
     def update_activity(self, records):
-        history_df = slc.read.parquet(os.path.join(os.getcwd(), "test"))
-        history_updated_rdd = history_df.rdd.map(keep_monthly_window)
-        history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
-        history_updated_df = history_updated_rdd.toDF(ColumnName)
-
         # 当天出现的ip
         current_records = []
         for record in records:
             ip = record['ip']
             if ip is None:
                 return
+            host = record['host']
+            if host is None:
+                host = ""
             try:
                 socket.inet_aton(ip)
-                current_records.append(Record('109.65.46.191', 'www.baidu.com', record['Timestamp'], record['count'], 1, [1], [record['count']], 0.0))
-                break
+                current_records.append(Record(ip, host, record['Timestamp'], record['count'], 1, [1], [record['count']], 0.0))
             except socket.error:
                 continue
 
         current_df = slc.createDataFrame(current_records) 
         current_pairrdd = current_df.rdd.map(lambda x: (x[0], x))
-        # 历史记录中当天未出现的ip, 计算差集
-        unpresent_pairrdd = history_updated_pairrdd.subtractByKey(current_pairrdd)
-        present_pairrdd = history_updated_pairrdd.subtractByKey(unpresent_pairrdd)
-
-        old_present_rdd = present_pairrdd.map(lambda x: x[1])
-        old_unpresent_rdd = unpresent_pairrdd.map(lambda x: x[1]).map(update_unpresent_records)
-
-        old_present_df = old_present_rdd.toDF(ColumnName)
-        old_unpresent_df = old_unpresent_rdd.toDF(ColumnName)
+        dst_df = current_df
+        # 历史数据
+        try:
+            history_df = slc.read.parquet(sysconfig.HDFS_DIR)
+            history_updated_rdd = history_df.rdd.map(keep_monthly_window)
+            history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
+            history_updated_df = history_updated_rdd.toDF(ColumnName)
+            # 历史记录中当天未出现的ip, 计算差集
+            unpresent_pairrdd = history_updated_pairrdd.subtractByKey(current_pairrdd)
+            present_pairrdd = history_updated_pairrdd.subtractByKey(unpresent_pairrdd)
+            old_present_rdd = present_pairrdd.map(lambda x: x[1])
+            old_unpresent_rdd = unpresent_pairrdd.map(lambda x: x[1]).map(update_unpresent_records)
+            old_present_df = old_present_rdd.toDF(ColumnName)
+            old_unpresent_df = old_unpresent_rdd.toDF(ColumnName)
+            dst_df = current_df.unionAll(old_unpresent_df).unionAll(old_present_df)
+        except AnalysisException:
+            # hdfs directory is empty, 首次写入数据
+            logger.info("first calculate ip's credit and write data to hdfs")
+        except Exception, e:
+            logger.info("encounter error when read history data from hdfs, error message:%s" % str(e))
+            return
 
         # 更新所有记录的总的次数，在线天数，最近三十天的数据
-        tmp_df = current_df.unionAll(old_unpresent_df).unionAll(old_present_df)
-        ipgrouped = tmp_df.groupBy('ip').agg(F.max('host').alias('host'),\
+        ipgrouped = dst_df.groupBy('ip').agg(F.max('host').alias('host'),\
                 F.max('timestamp').alias('timestamp'), F.sum('total_count').alias('total_count'),\
                 F.sum('total_online').alias('total_online'),\
                 F.collect_list('kfirewall_days').alias('kfirewall_days'),\
@@ -275,9 +285,11 @@ class UserActivity():
                 flattenUDF('kfirewall_days').alias('kfirewall_days'), flattenUDF('kfirewall_count').alias('kfirewall_count'), 'score')
 
         score_df = ipgrouped.rdd.map(calculate_score).toDF(ColumnName)
-        print(score_df.show())
+        #print(score_df.show(1))
         # save to hdfs
-        score_df.write.mode('overwrite').parquet(os.path.join(os.getcwd(), "test"))
+        score_df.write.mode('overwrite').parquet(sysconfig.HDFS_DIR)
+        # save to redis
+        score_df.foreach(save_records)
 
     def Run(self):
         for date in self.date_list:
@@ -294,8 +306,6 @@ class UserActivity():
                     .withColumnRenamed('first(host)', 'host')
             records = rdd.collect()
             self.update_activity(records)
-            print('~~~~~~~~~~~~~~~~~~~~~ end ~~~~~~~~~~~~~~~~~~~~')
-            return
                             
             done = time.time()
             elapsed = done - start

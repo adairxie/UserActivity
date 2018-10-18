@@ -31,7 +31,11 @@ REDIS_PORT = sysconfig.REDIS_PORT
 REDIS_PASSWD = sysconfig.REDIS_PASSWD
 REDIS_DB = sysconfig.REDIS_DB
 
-DAT_PATH = sysconfig.DAT_PATH
+MYSQL_HOST = sysconfig.MYSQL_HOST
+MYSQL_USER = sysconfig.MYSQL_USER
+MYSQL_PASSWD = sysconfig.MYSQL_PASSWD
+MYSQL_DB = sysconfig.MYSQL_DB
+
 MMDB = sysconfig.MMDB
 
 try:
@@ -54,10 +58,10 @@ except Exception, e:
     sys.exit(1)
 
 try:
-    connection = pymysql.connect(host='127.0.0.1',
-                           user='root',
-                           passwd='dbadmin',
-                           db='ipcredit',
+    connection = pymysql.connect(host= MYSQL_HOST,
+                           user=MYSQL_USER,
+                           passwd=MYSQL_PASSWD,
+                           db=MYSQL_DB,
                            charset='utf8mb4',
                            cursorclass=pymysql.cursors.DictCursor)
 except Exception, e:
@@ -230,13 +234,7 @@ class UserActivity():
         self.date_list = date_list
 
     def update_activity(self, records):
-        history_df = slc.createDataFrame([
-            Record('109.65.46.191', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 1], [100, 300], 80.12),
-            Record('109.65.46.192', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 100.0),
-            Record('109.65.46.193', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1, 0], [100], 93.23),
-            Record('109.65.46.194', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 94.50),
-            Record('109.65.46.195', 'www.baidu.com', '2018-07-01 18:23:37', 100, 1, [1], [100], 91.50),
-            ])
+        history_df = slc.read.parquet(os.path.join(os.getcwd(), "test"))
         history_updated_rdd = history_df.rdd.map(keep_monthly_window)
         history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
         history_updated_df = history_updated_rdd.toDF(ColumnName)

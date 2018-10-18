@@ -30,11 +30,6 @@ def parseDatesFromCmdLine():
     start_date = today - datetime.timedelta(days=1)
     end_date = today - datetime.timedelta(days=1)
 
-    lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
-    if lastest_dat_file is not None:
-        match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
-        start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
-
     return start_date, end_date
 
 def timer_job():
@@ -59,10 +54,6 @@ if __name__ == '__main__':
         start_date = datetime.date(int(dates[0]), int(dates[1]), int(dates[2]))
     else:
         start_date = today - datetime.timedelta(days=1)
-        lastest_dat_file = getLastestDatFile(sysconfig.DAT_PATH)
-        if lastest_dat_file is not None:
-            match = re.search(r'\d{4}-\d{2}-\d{2}', lastest_dat_file)
-            start_date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
 
     # end time
     end_date = today - datetime.timedelta(days=1)

@@ -18,14 +18,13 @@ import findspark
 findspark.init()
 
 from pyspark import SparkContext
-from pyspark.sql import Row
-from pyspark.sql import SQLContext, HiveContext
+from pyspark.sql import Row, SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 sc = SparkContext(master="local[2]", appName="IPCredit")
 sc.setLogLevel("ERROR")
-slc = HiveContext(sc)
+slc = SQLContext(sc)
 
 REDIS_HOST = sysconfig.REDIS_HOST
 REDIS_PORT = sysconfig.REDIS_PORT
@@ -279,6 +278,8 @@ class UserActivity():
 
         score_df = ipgrouped.rdd.map(calculate_score).toDF(ColumnName)
         print(score_df.show())
+        # save to hdfs
+        score_df.write.mode('overwrite').parquet(os.path.join(os.getcwd(), "test"))
 
     def Run(self):
         for date in self.date_list:

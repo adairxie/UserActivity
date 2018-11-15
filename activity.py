@@ -68,6 +68,9 @@ except Exception, e:
     sys.exit(1)
 
 def save_records(x):
+    if x.fingerprint is None:
+        return
+
     pipe = fingerprint_red_cli.pipeline(transaction=True)
     key = 'fp_%s' % x.fingerprint
     score = x.score

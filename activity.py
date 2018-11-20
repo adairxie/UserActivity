@@ -256,7 +256,17 @@ class UserActivity():
         dst_df = current_df
         # 历史数据
         try:
-            history_df = slc.read.parquet(sysconfig.HDFS_DIR)
+            count = 0
+            while count < 3:
+                try:
+                    history_df = slc.read.parquet(sysconfig.HDFS_DIR)
+                    break
+                except Exception, e:
+                    count = count + 1
+                    continue
+            if count >= 3:
+                return
+
             history_updated_rdd = history_df.rdd.map(keep_monthly_window)
             history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
             history_updated_df = history_updated_rdd.toDF(ColumnName)

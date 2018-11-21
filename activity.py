@@ -34,6 +34,14 @@ sc = SparkContext(master="local[*]", appName="UserActivityScore")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
+try:
+    fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
+    fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
+    portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
+except Exception, e:
+    logger.error('connect redis failed, err msg:%s' % str(e))
+    sys.exit(1)
+
 # Connect to mysql
 connection = pymysql.connect(host='127.0.0.1',
                        user='root',
@@ -56,26 +64,42 @@ def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
                 score = VALUES(score);
             """
         cursor.execute(sql, (fp, level, accesskey, score, timestamp))
-
     connection.commit()
 
-try:
-    fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
-    fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
-    portnum_red_cli = redis.Redis(host=AK_REDIS_HOST, port=AK_REDIS_PORT, db = AK_REDIS_DB, password=AK_REDIS_PASSWD)
-except Exception, e:
-    logger.error('connect redis failed, err msg:%s' % str(e))
-    sys.exit(1)
+default_config = {
+    u'week_online_time_limit': sysconfig.WEEK_ONLINE_TIME_LIMIT,
+    u'week_access_limit': sysconfig.WEEK_ACCESS_LIMIT,
+    u'weight_week_access_count': sysconfig.weight_week_access_count,
+    u'day_online_time_limit': sysconfig.DAY_ONLINE_TIME_LIMIT,
+    u'day_access_limit': sysconfig.DAY_ACCESS_LIMIT,
+    u'accesskey': u'default',
+    u'weight_week_online_time_total': sysconfig.weight_week_online_time_total,
+    u'weight_target_port_num': sysconfig.weight_target_port_num,
+    u'weight_online_time_total': sysconfig.weight_online_time_total,
+    u'weight_day_avg_access_count': sysconfig.weight_day_avg_access_count,
+    u'weight_week_online_days': sysconfig.weight_week_online_days,
+    u'weight_day_avg_online_time': sysconfig.weight_day_avg_online_time
+}
+
+def get_app_config(accesskey):
+    with connection.cursor() as cursor:
+        # Create a new record
+        sql = "select * from `appinfo` where `accesskey`=%s"
+        cursor.execute(sql, (accesskey))
+        result = cursor.fetchone()
+        if result is None:
+            return default_config
+        return result
 
 def save_records(x):
     if x.fingerprint is None:
         return
 
-    pipe = fingerprint_red_cli.pipeline(transaction=True)
     key = 'fp_%s' % x.fingerprint
     score = x.score
     timestamp = x.timestamp
 
+    pipe = fingerprint_red_cli.pipeline(transaction=True)
     blacktime = fingerprint_red_cli.hget(key, 'blacktime')
     if blacktime is not None:
         orig = datetime.datetime.fromtimestamp(int(blacktime))
@@ -150,7 +174,9 @@ def array_append(val):
 flattenIntArrayUDF = F.udf(array_append, T.ArrayType(T.IntegerType()))
 flattenFloatArrayUDF = F.udf(array_append, T.ArrayType(T.FloatType()))
 
+
 def calculate_score(x):
+    config = get_app_config(x.accesskey)
     sum_online_time_window = 0
     for online_time in x.online_time_window:
         sum_online_time_window += online_time
@@ -162,37 +188,37 @@ def calculate_score(x):
     sum_access_count_window = 0
     for access_count in x.access_count_window:
         sum_access_count_window += access_count
-    if sum_access_count_window > sysconfig.WEEK_ACCESS_LIMIT:
-        sum_access_count_window = sysconfig.WEEK_ACCESS_LIMIT
+    if sum_access_count_window > config.WEEK_ACCESS_LIMIT:
+        sum_access_count_window = config.WEEK_ACCESS_LIMIT
 
-    day_avg_online_time = sum_online_time_window / sysconfig.THRESHOLD_DAYS
+    day_avg_online_time = sum_online_time_window / config.THRESHOLD_DAYS
 
     day_avg_access_count = 0
     if sum_access_count_window > 0:
-        day_avg_access_count = sum_access_count_window / sysconfig.THRESHOLD_DAYS
-    if day_avg_access_count > sysconfig.DAY_ACCESS_LIMIT:
-        day_avg_access_count = sysconfig.DAY_ACCESS_LIMIT
+        day_avg_access_count = sum_access_count_window / config.THRESHOLD_DAYS
+    if day_avg_access_count > config.DAY_ACCESS_LIMIT:
+        day_avg_access_count = config.DAY_ACCESS_LIMIT
 
     total_online_time = x.total_online_time
     total_online_days = x.total_online_days
 
-    day_avg_online_time_ratio = day_avg_online_time / sysconfig.DAY_ONLINE_TIME_LIMIT
+    day_avg_online_time_ratio = day_avg_online_time / config.DAY_ONLINE_TIME_LIMIT
     if day_avg_online_time_ratio > 1:
         day_avg_online_time_ratio = 1
     score_day_avg_online_time = day_avg_online_time_ratio * 100
 
-    sum_online_time_window_ratio = sum_online_time_window / sysconfig.WEEK_ONLINE_TIME_LIMIT
+    sum_online_time_window_ratio = sum_online_time_window / config.WEEK_ONLINE_TIME_LIMIT
     if sum_online_time_window_ratio > 1:
         sum_online_time_window_ratio = 1
     score_sum_online_time_window = sum_online_time_window_ratio * 100
-    score_sum_online_days_window = sum_online_days_window / sysconfig.THRESHOLD_DAYS * 100
+    score_sum_online_days_window = sum_online_days_window / config.THRESHOLD_DAYS * 100
 
-    sum_access_count_ratio = sum_access_count_window / sysconfig.WEEK_ACCESS_LIMIT
+    sum_access_count_ratio = sum_access_count_window / config.WEEK_ACCESS_LIMIT
     if sum_access_count_ratio > 1:
         sum_access_count_ratio = 1
     score_access_count_window = sum_access_count_ratio * 100
 
-    day_avg_access_count_ratio = day_avg_access_count / sysconfig.DAY_ACCESS_LIMIT
+    day_avg_access_count_ratio = day_avg_access_count / config.DAY_ACCESS_LIMIT
     if day_avg_access_count_ratio > 1:
         day_avg_access_count_ratio = 1
     score_day_avg_access_count = day_avg_access_count_ratio * 100
@@ -202,19 +228,19 @@ def calculate_score(x):
         target_port_num_ratio = 1
     score_target_port_num = target_port_num_ratio * 100
 
-    total_online_time_ratio = x.total_online_time / (x.total_online_days * sysconfig.DAY_ONLINE_TIME_LIMIT)
+    total_online_time_ratio = x.total_online_time / (x.total_online_days * config.DAY_ONLINE_TIME_LIMIT)
     if total_online_time_ratio > 1:
         total_online_time_ratio = 1
     score_total_online_time = total_online_time_ratio * 100
 
-    score = score_day_avg_online_time * sysconfig.weight_day_avg_online_time + \
-            score_sum_online_time_window * sysconfig.weight_week_online_time_total + \
-            score_sum_online_days_window * sysconfig.weight_week_online_days + \
-            score_day_avg_access_count * sysconfig.weight_day_avg_access_count + \
-            score_access_count_window * sysconfig.weight_week_access_count + \
-            score_target_port_num * sysconfig.weight_target_port_num + \
-            score_total_online_time * sysconfig.weight_online_time_total
-    score = round((score / sysconfig.TOTAL_SCORE) * 100, 2)
+    score = score_day_avg_online_time * config.weight_day_avg_online_time + \
+            score_sum_online_time_window * config.weight_week_online_time_total + \
+            score_sum_online_days_window * config.weight_week_online_days + \
+            score_day_avg_access_count * config.weight_day_avg_access_count + \
+            score_access_count_window * config.weight_week_access_count + \
+            score_target_port_num * config.weight_target_port_num + \
+            score_total_online_time * config.weight_online_time_total
+    score = round((score / config.TOTAL_SCORE) * 100, 2)
 
     return x.fingerprint, x.accesskey, x.timestamp, x.target_port_num, x.target_port_total,\
             x.total_online_time, x.total_online_days, x.online_time_window, x.online_days_window, x.access_count_window, score

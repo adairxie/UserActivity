@@ -191,7 +191,7 @@ def save_records(x):
         host = ''
     jsonedzone = json.dumps(zone, ensure_ascii=False)
     save_to_redis(ip, host, score, jsonedzone)
-    save_to_mysql(ip, host, score, jsonedzone, timestamp)
+    #save_to_mysql(ip, host, score, jsonedzone, timestamp)
 
 def calculate_score(x):
     month_kfirewall_day_num = 0
@@ -256,17 +256,7 @@ class UserActivity():
         dst_df = current_df
         # 历史数据
         try:
-            count = 0
-            while count < 3:
-                try:
-                    history_df = slc.read.parquet(sysconfig.HDFS_DIR)
-                    break
-                except Exception, e:
-                    count = count + 1
-                    continue
-            if count >= 3:
-                return
-
+            history_df = slc.read.parquet(sysconfig.HDFS_DIR)
             history_updated_rdd = history_df.rdd.map(keep_monthly_window)
             history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
             history_updated_df = history_updated_rdd.toDF(ColumnName)
@@ -284,7 +274,6 @@ class UserActivity():
         except Exception, e:
             logger.info("encounter error when read history data from hdfs, error message:%s" % str(e))
             return
-
         # 更新所有记录的总的次数，在线天数，最近三十天的数据
         ipgrouped = dst_df.groupBy('ip').agg(F.max('host').alias('host'),\
                 F.max('timestamp').alias('timestamp'), F.sum('total_count').alias('total_count'),\

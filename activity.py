@@ -66,7 +66,8 @@ def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
         cursor.execute(sql, (fp, level, accesskey, score, timestamp))
     connection.commit()
 
-default_config = {
+app_config = {}
+app_config['default'] = {
     u'week_online_time_limit': sysconfig.WEEK_ONLINE_TIME_LIMIT,
     u'week_access_limit': sysconfig.WEEK_ACCESS_LIMIT,
     u'weight_week_access_count': sysconfig.weight_week_access_count,
@@ -78,18 +79,22 @@ default_config = {
     u'weight_online_time_total': sysconfig.weight_online_time_total,
     u'weight_day_avg_access_count': sysconfig.weight_day_avg_access_count,
     u'weight_week_online_days': sysconfig.weight_week_online_days,
-    u'weight_day_avg_online_time': sysconfig.weight_day_avg_online_time
+    u'weight_day_avg_online_time': sysconfig.weight_day_avg_online_time,
+    u'threshold_days': sysconfig.THRESHOLD_DAYS
 }
 
-def get_app_config(accesskey):
+def fresh_app_config():
     with connection.cursor() as cursor:
-        # Create a new record
-        sql = "select * from `appinfo` where `accesskey`=%s"
-        cursor.execute(sql, (accesskey))
-        result = cursor.fetchone()
-        if result is None:
-            return default_config
-        return result
+        sql = "select * from `appinfo`"
+        cursor.execute(sql, ())
+        result = cursor.fetchall()
+        for conf in result:
+            app_config[conf['accesskey']] = conf
+
+def get_app_config(accesskey):
+    if accesskey in app_config:
+        return app_config[accesskey]
+    return app_config['default']
 
 def save_records(x):
     if x.fingerprint is None:
@@ -136,24 +141,6 @@ Record = Row('fingerprint', 'accesskey', 'timestamp', 'target_port_num', 'target
 ColumnName = ['fingerprint', 'accesskey', 'timestamp', 'target_port_num', 'target_port_total',\
         'total_online_time', 'total_online_days', 'online_time_window', 'online_days_window', 'access_count_window', 'score']
 
-def keep_monthly_window(x):
-    online_time_window = x.online_time_window
-    if len(online_time_window) >= sysconfig.THRESHOLD_DAYS:
-        del online_time_window[0]
-
-    online_days_window = x.online_days_window
-    if len(online_days_window) >= sysconfig.THRESHOLD_DAYS:
-        del online_days_window[0]
-
-    access_count_window = x.access_count_window
-    if len(access_count_window) >= sysconfig.THRESHOLD_DAYS:
-        del access_count_window[0]
-
-    target_port_num = 0
-
-    return x.fingerprint, x.accesskey, x.timestamp, target_port_num, x.target_port_total,\
-            x.total_online_time, x.total_online_days, online_time_window, online_days_window, access_count_window, x.score
-
 def update_unpresent_records(x):
     online_time_window = x[7]
     online_time_window.append(0.0)
@@ -165,8 +152,6 @@ def update_unpresent_records(x):
 
 def concat_list(x, y):
     val = x + y
-    if len(val) > sysconfig.THRESHOLD_DAYS:
-        del val[0]
     return val
 def array_append(val):
     return reduce (concat_list, val)
@@ -177,48 +162,60 @@ flattenFloatArrayUDF = F.udf(array_append, T.ArrayType(T.FloatType()))
 
 def calculate_score(x):
     config = get_app_config(x.accesskey)
+    online_time_window = x.online_time_window
+    if len(online_time_window) >= config['threshold_days']:
+        del online_time_window[0]
+
+    online_days_window = x.online_days_window
+    if len(online_days_window) >= config['threshold_days']:
+        del online_days_window[0]
+
+    access_count_window = x.access_count_window
+    if len(access_count_window) >= config['threshold_days']:
+        del access_count_window[0]
+
     sum_online_time_window = 0
-    for online_time in x.online_time_window:
+    for online_time in online_time_window:
         sum_online_time_window += online_time
 
     sum_online_days_window = 0
-    for online in x.online_days_window:
+    for online in online_days_window:
         sum_online_days_window += online
 
     sum_access_count_window = 0
-    for access_count in x.access_count_window:
+    for access_count in access_count_window:
         sum_access_count_window += access_count
-    if sum_access_count_window > config.WEEK_ACCESS_LIMIT:
-        sum_access_count_window = config.WEEK_ACCESS_LIMIT
+    if sum_access_count_window > config['week_access_limit']:
+        sum_access_count_window = config['week_access_limit']
 
-    day_avg_online_time = sum_online_time_window / config.THRESHOLD_DAYS
+    day_avg_online_time = sum_online_time_window / config['threshold_days']
 
     day_avg_access_count = 0
     if sum_access_count_window > 0:
-        day_avg_access_count = sum_access_count_window / config.THRESHOLD_DAYS
-    if day_avg_access_count > config.DAY_ACCESS_LIMIT:
-        day_avg_access_count = config.DAY_ACCESS_LIMIT
+        day_avg_access_count = sum_access_count_window / config['threshold_days']
+    if day_avg_access_count > config['day_access_limit']:
+        day_avg_access_count = config['day_access_limit']
 
     total_online_time = x.total_online_time
     total_online_days = x.total_online_days
 
-    day_avg_online_time_ratio = day_avg_online_time / config.DAY_ONLINE_TIME_LIMIT
+    day_avg_online_time_ratio = day_avg_online_time / config['day_online_time_limit']
     if day_avg_online_time_ratio > 1:
         day_avg_online_time_ratio = 1
     score_day_avg_online_time = day_avg_online_time_ratio * 100
 
-    sum_online_time_window_ratio = sum_online_time_window / config.WEEK_ONLINE_TIME_LIMIT
+    sum_online_time_window_ratio = sum_online_time_window / config['week_online_time_limit']
     if sum_online_time_window_ratio > 1:
         sum_online_time_window_ratio = 1
     score_sum_online_time_window = sum_online_time_window_ratio * 100
-    score_sum_online_days_window = sum_online_days_window / config.THRESHOLD_DAYS * 100
+    score_sum_online_days_window = sum_online_days_window / config['threshold_days'] * 100
 
-    sum_access_count_ratio = sum_access_count_window / config.WEEK_ACCESS_LIMIT
+    sum_access_count_ratio = sum_access_count_window / config['week_access_limit']
     if sum_access_count_ratio > 1:
         sum_access_count_ratio = 1
     score_access_count_window = sum_access_count_ratio * 100
 
-    day_avg_access_count_ratio = day_avg_access_count / config.DAY_ACCESS_LIMIT
+    day_avg_access_count_ratio = day_avg_access_count / config['day_access_limit']
     if day_avg_access_count_ratio > 1:
         day_avg_access_count_ratio = 1
     score_day_avg_access_count = day_avg_access_count_ratio * 100
@@ -228,22 +225,25 @@ def calculate_score(x):
         target_port_num_ratio = 1
     score_target_port_num = target_port_num_ratio * 100
 
-    total_online_time_ratio = x.total_online_time / (x.total_online_days * config.DAY_ONLINE_TIME_LIMIT)
+    total_online_time_ratio = x.total_online_time / (x.total_online_days * config['day_online_time_limit'])
     if total_online_time_ratio > 1:
         total_online_time_ratio = 1
     score_total_online_time = total_online_time_ratio * 100
 
-    score = score_day_avg_online_time * config.weight_day_avg_online_time + \
-            score_sum_online_time_window * config.weight_week_online_time_total + \
-            score_sum_online_days_window * config.weight_week_online_days + \
-            score_day_avg_access_count * config.weight_day_avg_access_count + \
-            score_access_count_window * config.weight_week_access_count + \
-            score_target_port_num * config.weight_target_port_num + \
-            score_total_online_time * config.weight_online_time_total
-    score = round((score / config.TOTAL_SCORE) * 100, 2)
+    score = score_day_avg_online_time * config['weight_day_avg_online_time'] + \
+            score_sum_online_time_window * config['weight_week_online_time_total'] + \
+            score_sum_online_days_window * config['weight_week_online_days'] + \
+            score_day_avg_access_count * config['weight_day_avg_access_count'] + \
+            score_access_count_window * config['weight_week_access_count'] + \
+            score_target_port_num * config['weight_target_port_num'] + \
+            score_total_online_time * config['weight_online_time_total']
+    total_score = 100.0 * (config['weight_day_avg_access_count'] + config['weight_week_online_time_total'] + config['weight_week_online_days'] +\
+            config['weight_day_avg_access_count'] + config['weight_week_access_count'] + config['weight_target_port_num'] + config['weight_online_time_total'])
+    score = round((score / total_score) * 100, 2)
 
-    return x.fingerprint, x.accesskey, x.timestamp, x.target_port_num, x.target_port_total,\
-            x.total_online_time, x.total_online_days, x.online_time_window, x.online_days_window, x.access_count_window, score
+    target_port_num = 0
+    return x.fingerprint, x.accesskey, x.timestamp, target_port_num, x.target_port_total,\
+            x.total_online_time, x.total_online_days, online_time_window, online_days_window, access_count_window, score
 
 class UserActivity():
     def __init__(self, date_list):
@@ -272,9 +272,8 @@ class UserActivity():
         # 历史数据
         try:
             history_df = slc.read.parquet(sysconfig.HDFS_DIR)
-            history_updated_rdd = history_df.rdd.map(keep_monthly_window)
-            history_updated_pairrdd = history_updated_rdd.map(lambda x: (x[0], x))
-            history_updated_df = history_updated_rdd.toDF(ColumnName)
+            history_updated_pairrdd = history_df.rdd.map(lambda x: (x[0], x))
+            history_updated_df = history_df.rdd.toDF(ColumnName)
             # 历史记录中当天未出现的fp，计算差集
             unpresent_pairrdd = history_updated_pairrdd.subtractByKey(current_pairrdd)
             present_pairrdd = history_updated_pairrdd.subtractByKey(unpresent_pairrdd)
@@ -311,6 +310,7 @@ class UserActivity():
     def Run(self):
         self.scores = {}
         for day in self.date_list:
+            fresh_app_config()
             logger.info('beginning analysis %s tjkd app log' % day)
             start = time.time()
             try:

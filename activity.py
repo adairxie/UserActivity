@@ -263,6 +263,8 @@ class UserActivity():
             day_online_time = record['day_online_time']
             if accesskey in self.portNum:
                 target_port_total = self.portNum[accesskey]
+            else:
+                continue
             current_records.append(Record(record['fingerprint'], record['accesskey'], record['timestamp'],\
                     record['target_port_num'], target_port_total, day_online_time, 1, [day_online_time], [1], [record['day_access_count']], 0.0))
 

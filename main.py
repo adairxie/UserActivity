@@ -6,7 +6,6 @@ import datetime
 from utils import logger
 
 from activity import *
-from pathlib import Path
 
 from conf import sysconfig
 from apscheduler.schedulers.blocking import BlockingScheduler

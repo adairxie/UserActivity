@@ -268,9 +268,9 @@ class UserActivity():
             old_present_df = old_present_rdd.toDF(ColumnName)
             old_unpresent_df = old_unpresent_rdd.toDF(ColumnName)
             dst_df = current_df.unionAll(old_unpresent_df).unionAll(old_present_df)
-        except AnalysisException:
+        except AnalysisException, e:
             # hdfs directory is empty, 首次写入数据
-            logger.info("first calculate ip's credit and write data to hdfs")
+            logger.info(" write data to hdfs encounters an error, message:%s" % str(e))
         except Exception, e:
             logger.info("encounter error when read history data from hdfs, error message:%s" % str(e))
             return

@@ -32,6 +32,7 @@ def parseDatesFromCmdLine():
 def timer_job():
     start_date, end_date = parseDatesFromCmdLine()
     date_list = generate_dates(start_date, end_date)
+    logger.info('########## execute timer task: ', date_list)
     userScore = UserActivity(date_list)
     userScore.Run()
     del userScore

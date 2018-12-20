@@ -251,7 +251,7 @@ class UserActivity():
         if ports is not None:
             self.portNum = ports
 
-    def UpdateAcitivity(self, records):
+    def update_acitivity(self, records):
         # 当天出现的ip
         current_records = []
         for record in records:
@@ -308,7 +308,7 @@ class UserActivity():
         score_df.foreach(save_records)
         #print(score_df.show(10))
 
-    def Run(self):
+    def run(self):
         self.scores = {}
         for day in self.date_list:
             fresh_app_config()
@@ -326,7 +326,7 @@ class UserActivity():
                 continue 
 
             records = df.rdd.collect()
-            self.UpdateAcitivity(records)
+            self.update_acitivity(records)
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))

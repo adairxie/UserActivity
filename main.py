@@ -22,7 +22,7 @@ def generate_dates(start_date, end_date):
         current_date += td
     return date_list
 
-def parseDatesFromCmdLine():
+def get_date_range():
     today = datetime.date.today()
     start_date = today - datetime.timedelta(days=1)
     end_date = today - datetime.timedelta(days=1)
@@ -30,12 +30,15 @@ def parseDatesFromCmdLine():
     return start_date, end_date
 
 def timer_job():
-    start_date, end_date = parseDatesFromCmdLine()
+    start_date, end_date = get_date_range()
     date_list = generate_dates(start_date, end_date)
-    logger.info('########## execute timer task: ', date_list)
-    userScore = UserActivity(date_list)
-    userScore.Run()
-    del userScore
+    logger.info('calculating fingerprints\' credit on %s start!' % start_date)
+    try:
+        userScore = UserActivity(date_list)
+        userScore.run()
+    except Exception as e:
+        logger.error('calculating fingerprints\' credit on %s encountered error: %s' % (start_date, str(e)))
+    logger.info('calculating fingerprints\' credit on %s end!' % start_date)
 
 if __name__ == '__main__':
     parser = optparse.OptionParser()
@@ -59,9 +62,17 @@ if __name__ == '__main__':
     date_list = generate_dates(start_date, end_date)
 
     userScore = UserActivity(date_list)
-    userScore.Run()
-    del userScore
+    try:
+        userScore.run()
+    except Exception as e:
+        logger.error('encountered an error when calculating credit firt time, err: %s' % str(e))
+        sys.exit()
 
     sched = BlockingScheduler()
-    sched.add_job(timer_job, "interval", hours=23)
-    sched.start()
+    # start program in am is best.
+    sched.add_job(timer_job, "interval", hours=20)
+
+    try:
+        sched.start()
+    except (KeyboardInterrupt, SystemExit):
+        sched.shutdown()

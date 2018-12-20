@@ -192,7 +192,7 @@ def save_records(x):
         host = ''
     jsonedzone = json.dumps(zone, ensure_ascii=False)
     #save_to_redis(ip, host, score, jsonedzone)
-    #save_to_mysql(ip, host, score, jsonedzone, timestamp)
+    save_to_mysql(ip, host, score, jsonedzone, timestamp)
 
 def calculate_score(x):
     month_kfirewall_day_num = 0
@@ -284,9 +284,9 @@ class UserActivity():
 
         score_df = ipgrouped.rdd.map(calculate_score).toDF(ColumnName)
         score_df.write.mode('overwrite').parquet(sysconfig.HDFS_DIR)
-        #score_df.foreach(save_records)
+        score_df.foreach(save_records)
 
-    def Run(self):
+    def run(self):
         for date in self.date_list:
             logger.info('beginning analysis %s ngx error log' % date)
             start = time.time()

@@ -33,6 +33,9 @@ sc = SparkContext(master="local[*]", appName="UserActivityScore")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
+from sqlalchemy import create_engine
+engine = create_engine("mysql+pymysql://root:dbadmin@127.0.0.1:3306/usercredit")
+
 try:
     fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
     fingerprint_red_cli = redis.Redis(connection_pool=fingerprint_pool)
@@ -41,29 +44,19 @@ except Exception, e:
     logger.error('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
 
-# Connect to mysql
-connection = pymysql.connect(host='127.0.0.1',
-                       user='root',
-                       passwd='dbadmin',
-                       db='usercredit',
-                       charset='utf8mb4',
-                       cursorclass=pymysql.cursors.DictCursor)
-
-def writeUserInfoToMySQL(fp, level, accesskey, score, timestamp):
-    with connection.cursor() as cursor:
-        # Create a new record
-        sql = """
-            INSERT INTO activity
-                (fp, level, accesskey, score, timestamp)
-            VALUES
-                (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                level = VALUES(level),
-                timestamp = VALUES(timestamp),
-                score = VALUES(score);
-            """
-        cursor.execute(sql, (fp, level, accesskey, score, timestamp))
-    connection.commit()
+def save_userinfo(fp, level, accesskey, score, timestamp):
+    sql = """
+        INSERT INTO activity
+            (fp, level, accesskey, score, timestamp)
+        VALUES
+            (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            level = VALUES(level),
+            timestamp = VALUES(timestamp),
+            score = VALUES(score);
+        """
+    sql = sql % (fp, level, accesskey, score, timestamp)
+    engine.execute(sql)
 
 app_config = {}
 app_config['default'] = {
@@ -83,12 +76,10 @@ app_config['default'] = {
 }
 
 def fresh_app_config():
-    with connection.cursor() as cursor:
-        sql = "select * from `appinfo`"
-        cursor.execute(sql, ())
-        result = cursor.fetchall()
-        for conf in result:
-            app_config[conf['accesskey']] = conf
+    result = engine.execute('select * from `appinfo`')
+    res = result.fetchall()
+    for conf in res:
+        app_config[conf['accesskey']] = conf
 
 def get_app_config(accesskey):
     if accesskey in app_config:
@@ -120,7 +111,7 @@ def save_records(x):
 
     pipe.hset(key, 'level', level)
     pipe.execute()
-    writeUserInfoToMySQL(x.fingerprint, level, x.accesskey, float(score), timestamp)
+    save_userinfo(x.fingerprint, level, x.accesskey, float(score), timestamp)
 
 def accesskey_port_num():
     result = {}

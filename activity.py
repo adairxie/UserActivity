@@ -42,13 +42,6 @@ MYSQL_DB = sysconfig.MYSQL_DB
 
 engine = create_engine("mysql+pymysql://root:dbadmin@127.0.0.1:3306/ipcredit")
 
-MMDB = sysconfig.MMDB
-
-try:
-    mmdb_reader = maxminddb.open_database(MMDB)
-except maxminddb.InvalidDatabaseError, e:
-    #print('open %s failed, err msg:%s' % (MMDB, str(e)))
-    sys.exit(1)
 
 try:
     ipcredit_pool = redis.ConnectionPool(
@@ -64,12 +57,11 @@ except Exception, e:
     sys.exit(1)
 
 
-def save_to_mysql(ip, hosts, score, zone, timestamp):
-    sql = "INSERT INTO credit(ip, hosts, score, zone, timestamp) " \
-          "VALUES(\"%s\", \"%s\", \"%s\", \"%s\", \"%s\") ON DUPLICATE KEY UPDATE " \
+def save_to_mysql(ip, hosts, score, timestamp):
+    sql = "INSERT INTO credit(ip, hosts, score, timestamp) " \
+          "VALUES(\"%s\", \"%s\", %.2f, \"%s\") ON DUPLICATE KEY UPDATE " \
           "hosts=VALUES(hosts),timestamp=VALUES(timestamp),score=VALUES(score)"
-
-    engine.execute(sql % (ip, hosts, score, zone, timestamp))
+    engine.execute(sql % (ip, hosts, score, timestamp))
 
 
 def concat_list(x, y):
@@ -97,21 +89,6 @@ def delHistoryDateFile(path):
         if os.path.splitext(filename)[1] == '.dat':
             dst = os.path.join(path, filename)
             os.remove(dst)
-
-def querymmdb(ip):
-    if ip is not None:
-        try:
-            ipinfo = mmdb_reader.get(ip)
-            if ipinfo is not None:
-                continent = ipinfo['continent']['names']['zh-CN']
-                country = ipinfo['country']['names']['zh-CN']
-                province = ipinfo['province']['names']['zh-CN']
-                city = ipinfo['city']['names']['zh-CN']
-                isp = ipinfo['isp']['names']['zh-CN']
-                return {'continent': continent, 'country': country, 'province':province, 'city':city, 'isp':isp}
-        except ValueError, e:
-            return None
-    return None
 
 def save_to_redis(ip, host, score, zone):
     if ip != "":
@@ -167,13 +144,10 @@ def save_records(x):
     ip = x.ip
     host = x.host
     score = x.score
-    zone = querymmdb(x.ip)
     timestamp = x.timestamp
     if host is None:
         host = ''
-    jsonedzone = json.dumps(zone, ensure_ascii=False)
-    #save_to_redis(ip, host, score, jsonedzone)
-    save_to_mysql(ip, host, score, jsonedzone, timestamp)
+    save_to_mysql(ip, host, score, timestamp)
 
 def calculate_score(x):
     month_kfirewall_day_num = 0

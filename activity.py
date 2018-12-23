@@ -45,18 +45,10 @@ except Exception, e:
     sys.exit(1)
 
 def save_userinfo(fp, level, accesskey, score, timestamp):
-    sql = """
-        INSERT INTO activity
-            (fp, level, accesskey, score, timestamp)
-        VALUES
-            (%s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            level = VALUES(level),
-            timestamp = VALUES(timestamp),
-            score = VALUES(score);
-        """
-    sql = sql % (fp, level, accesskey, score, timestamp)
-    engine.execute(sql)
+    sql = "INSERT INTO activity(fp, level, accesskey, score, timestamp) " \
+        "VALUES(\"%s\", \"%s\", \"%s\", %s, \"%s\") ON DUPLICATE KEY UPDATE level=VALUES(level),timestamp=VALUES(timestamp)," \
+        "score=VALUES(score)"
+    engine.execute(sql % (fp, level, accesskey, score, timestamp))
 
 app_config = {}
 app_config['default'] = {

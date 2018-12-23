@@ -22,6 +22,8 @@ from pyspark.sql import Row, SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.utils import AnalysisException
+from sqlalchemy import create_engine
+
 
 conf = SparkConf().set("spark.ui.port", "14050")
 sc = SparkContext("local[*]", "IPCredit", conf=conf)
@@ -37,6 +39,8 @@ MYSQL_HOST = sysconfig.MYSQL_HOST
 MYSQL_USER = sysconfig.MYSQL_USER
 MYSQL_PASSWD = sysconfig.MYSQL_PASSWD
 MYSQL_DB = sysconfig.MYSQL_DB
+
+engine = create_engine("mysql+pymysql://root:dbadmin@127.0.0.1:3306/ipcredit")
 
 MMDB = sysconfig.MMDB
 
@@ -59,36 +63,13 @@ except Exception, e:
     print('connect redis failed, err msg:%s' % str(e))
     sys.exit(1)
 
-try:
-    connection = pymysql.connect(host= MYSQL_HOST,
-                           user=MYSQL_USER,
-                           passwd=MYSQL_PASSWD,
-                           db=MYSQL_DB,
-                           charset='utf8mb4',
-                           cursorclass=pymysql.cursors.DictCursor)
-except Exception, e:
-    print('connect mysql redis failed, err msg:%s' % str(e))
-    sys.exit(1)
 
 def save_to_mysql(ip, hosts, score, zone, timestamp):
-    try:
-        with connection.cursor() as cursor:
-            # Create a new record
-            sql = """
-                INSERT INTO credit 
-                    (ip, hosts, score, zone, timestamp)
-                VALUES
-                    (%s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    hosts = VALUES(hosts),
-                    timestamp = VALUES(timestamp),
-                    score = VALUES(score);
-                """
-            cursor.execute(sql, (ip, hosts, score, zone, timestamp))
+    sql = "INSERT INTO credit(ip, hosts, score, zone, timestamp) " \
+          "VALUES(\"%s\", \"%s\", \"%s\", \"%s\", \"%s\") ON DUPLICATE KEY UPDATE " \
+          "hosts=VALUES(hosts),timestamp=VALUES(timestamp),score=VALUES(score)"
 
-        connection.commit()
-    except Exception, e:
-        logger.info('save ip credit information to mysql failed, err %s' % str(e))
+    engine.execute(sql % (ip, hosts, score, zone, timestamp))
 
 
 def concat_list(x, y):

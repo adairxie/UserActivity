@@ -34,7 +34,14 @@ sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
 
 from sqlalchemy import create_engine
-engine = create_engine("mysql+pymysql://root:dbadmin@127.0.0.1:3306/usercredit")
+engine = create_engine(
+                        'mysql+pymysql://root:dbadmin@127.0.0.1:3306/usercredit',
+                        pool_size=100,
+                        pool_recycle=3600,
+                        pool_timeout=30,
+                        pool_pre_ping=True,
+                        max_overflow=0)
+
 
 try:
     fingerprint_pool = redis.ConnectionPool(host=FP_REDIS_HOST, port=FP_REDIS_PORT, db=FP_REDIS_DB, password=FP_REDIS_PASSWD)
@@ -48,7 +55,9 @@ def save_userinfo(fp, level, accesskey, score, timestamp):
     sql = "INSERT INTO activity(fp, level, accesskey, score, timestamp) " \
         "VALUES(\"%s\", \"%s\", \"%s\", %s, \"%s\") ON DUPLICATE KEY UPDATE level=VALUES(level),timestamp=VALUES(timestamp)," \
         "score=VALUES(score)"
-    engine.execute(sql % (fp, level, accesskey, score, timestamp))
+    conn = engine.connect()
+    conn.execute(sql % (fp, level, accesskey, score, timestamp))
+    conn.close()
 
 app_config = {}
 app_config['default'] = {
@@ -294,6 +303,14 @@ class UserActivity():
     def run(self):
         self.scores = {}
         for day in self.date_list:
+            engine = create_engine(
+                        'mysql+pymysql://root:dbadmin@127.0.0.1:3306/usercredit',
+                        pool_size=100,
+                        pool_recycle=3600,
+                        pool_timeout=30,
+                        pool_pre_ping=True,
+                        max_overflow=0)
+
             fresh_app_config()
             logger.info('beginning analysis %s tjkd app log' % day)
             start = time.time()
@@ -310,6 +327,8 @@ class UserActivity():
 
             records = df.rdd.collect()
             self.update_acitivity(records)
+
+            engine.dispose()
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (day, elapsed))

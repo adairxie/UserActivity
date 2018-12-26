@@ -21,8 +21,7 @@ from pyspark.sql.utils import AnalysisException
 from sqlalchemy import create_engine
 
 
-sc = SparkContext("local[*]", "IPCredit")
-sc.setLogLevel("ERROR")
+sc = SparkContext("local[2]", "IPCredit")
 slc = SQLContext(sc)
 
 MYSQL_HOST = sysconfig.MYSQL_HOST

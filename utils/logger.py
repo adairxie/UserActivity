@@ -2,21 +2,15 @@
 import time
 import os
 import logging
-from conf import sysconfig
-
-LOG_PATH = sysconfig.LOG_PATH
+from logging import handlers
 
 
 class Logger():
     def __init__(self, logname='scaner'):
 
-        #curr_day = time.strftime('%Y-%m-%d', time.localtime(time.time()))
-        log_path = LOG_PATH
-        # if not os.path.exists(log_path):
-        #     os.mkdir(log_path)
-        log_file = '/' + logname
+        log_path = os.path.join(os.getcwd(), 'logs/')
 
-        handler = logging.handlers.RotatingFileHandler(log_path+log_file, maxBytes=20*1024*1024, backupCount=10)
+        handler = logging.handlers.RotatingFileHandler(log_path+logname, maxBytes=20*1024*1024, backupCount=10)
         fmt = "%(asctime)s - %(name)s- [%(filename)s:%(lineno)s] - %(levelname)s - %(message)s "
         formatter = logging.Formatter(fmt)
         handler.setFormatter(formatter)

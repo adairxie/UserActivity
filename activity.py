@@ -3,13 +3,9 @@ import os
 import sys
 import json
 import time
-import redis
 import socket
-import pymysql
 import datetime
-import maxminddb
 
-from pathlib import Path
 from utils import logger
 
 from conf import sysconfig
@@ -25,15 +21,9 @@ from pyspark.sql.utils import AnalysisException
 from sqlalchemy import create_engine
 
 
-conf = SparkConf().set("spark.ui.port", "14050")
-sc = SparkContext("local[*]", "IPCredit", conf=conf)
+sc = SparkContext("local[*]", "IPCredit")
 sc.setLogLevel("ERROR")
 slc = SQLContext(sc)
-
-REDIS_HOST = sysconfig.REDIS_HOST
-REDIS_PORT = sysconfig.REDIS_PORT
-REDIS_PASSWD = sysconfig.REDIS_PASSWD
-REDIS_DB = sysconfig.REDIS_DB
 
 MYSQL_HOST = sysconfig.MYSQL_HOST
 MYSQL_USER = sysconfig.MYSQL_USER
@@ -47,20 +37,6 @@ engine = create_engine(
                         pool_timeout=30,
                         pool_pre_ping=True,
                         max_overflow=0)
-
-
-try:
-    ipcredit_pool = redis.ConnectionPool(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            db=REDIS_DB,
-            password=REDIS_PASSWD,
-            socket_connect_timeout=120,
-            socket_keepalive=True)
-    ipcredit_red_cli = redis.Redis(connection_pool=ipcredit_pool)
-except Exception, e:
-    print('connect redis failed, err msg:%s' % str(e))
-    sys.exit(1)
 
 
 def save_to_mysql(ip, hosts, score, timestamp):
@@ -102,17 +78,6 @@ def delHistoryDateFile(path):
             dst = os.path.join(path, filename)
             os.remove(dst)
 
-def save_to_redis(ip, host, score, zone):
-    if ip != "":
-        try:
-            pipe = ipcredit_red_cli.pipeline(transaction=True)
-            if host != "":
-                pipe.hset(ip, 'host', host)
-            pipe.hset(ip, 'score', score)
-            pipe.hset(ip, 'zone', zone)
-            pipe.execute()
-        except Exception, e:
-            logger.info('save ip credit information to redis failed, err %s' % str(e))
 
 def getIP(row):
     result = {}

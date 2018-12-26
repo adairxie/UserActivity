@@ -2,15 +2,14 @@
 import os
 import sys
 import time
-import pickle
 import optparse
 import datetime
-from utils import logger
 
-from activity import *
-from pathlib import Path
+from activity import UserActivity
 
-from conf import sysconfig
+from pyspark import SparkContext, SparkConf
+from pyspark.sql import SQLContext
+
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 reload(sys)
@@ -43,7 +42,6 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()
     parser.add_option('-s', '--start', action='store', dest="start_date",
         help="calculate user's activity from this day, for example: 2018-05-01")
-
     options, args = parser.parse_args()
 
     today = datetime.date.today()
@@ -57,13 +55,18 @@ if __name__ == '__main__':
 
     # end time
     end_date = today - datetime.timedelta(days=1)
-
     date_list = generate_dates(start_date, end_date)
 
+    conf = SparkConf().setAppName("ipcredit")
+    sc = SparkContext(conf=conf)
+    sc.setLogLevel("ERROR")
+    slc = SQLContext(sc)
+
     userScore = UserActivity(date_list)
-    userScore.Run()
+    userScore.Run(slc)
     del userScore
 
-    sched = BlockingScheduler()
-    sched.add_job(timer_job, "interval", hours=23)
-    sched.start()
+    print("######################## end ########################")
+    #sched = BlockingScheduler()
+    #sched.add_job(timer_job, "interval", hours=23)
+    #sched.start()

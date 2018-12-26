@@ -40,7 +40,13 @@ MYSQL_USER = sysconfig.MYSQL_USER
 MYSQL_PASSWD = sysconfig.MYSQL_PASSWD
 MYSQL_DB = sysconfig.MYSQL_DB
 
-engine = create_engine("mysql+pymysql://root:dbadmin@127.0.0.1:3306/ipcredit")
+engine = create_engine(
+                        'mysql+pymysql://root:dbadmin@127.0.0.1:3306/ipcredit',
+                        pool_size=100,
+                        pool_recycle=3600,
+                        pool_timeout=30,
+                        pool_pre_ping=True,
+                        max_overflow=0)
 
 
 try:
@@ -59,9 +65,15 @@ except Exception, e:
 
 def save_to_mysql(ip, hosts, score, timestamp):
     sql = "INSERT INTO credit(ip, hosts, score, timestamp) " \
-          "VALUES(\"%s\", \"%s\", %.2f, \"%s\") ON DUPLICATE KEY UPDATE " \
-          "hosts=VALUES(hosts),timestamp=VALUES(timestamp),score=VALUES(score)"
-    engine.execute(sql % (ip, hosts, score, timestamp))
+          "VALUES(\"{}\", \"{}\", {}, \"{}\") ON DUPLICATE KEY UPDATE " \
+          "hosts=VALUES(hosts),timestamp=VALUES(timestamp),score=VALUES(score)".format(ip, hosts, score, timestamp)
+    try:
+        conn = engine.connect()
+        conn.execute(sql)
+    except Exception as e:
+        logger.info('############## sql: %s, ERROR: %s' % (sql, str(e)))
+    finally:
+        conn.close()
 
 
 def concat_list(x, y):
@@ -243,6 +255,14 @@ class UserActivity():
 
     def run(self):
         for date in self.date_list:
+            engine = create_engine(
+                        'mysql+pymysql://root:dbadmin@127.0.0.1:3306/ipcredit',
+                        pool_size=100,
+                        pool_recycle=3600,
+                        pool_timeout=30,
+                        pool_pre_ping=True,
+                        max_overflow=0)
+
             logger.info('beginning analysis %s ngx error log' % date)
             start = time.time()
 
@@ -257,6 +277,7 @@ class UserActivity():
             records = rdd.collect()
             self.update_activity(records)
                             
+            engine.dispose()
             done = time.time()
             elapsed = done - start
             logger.info('%s analysis end, %.2f seconds elapsed' % (date, elapsed))

@@ -72,6 +72,8 @@ app_config['default'] = {
     u'weight_online_time_total': sysconfig.weight_online_time_total,
     u'weight_day_avg_access_count': sysconfig.weight_day_avg_access_count,
     u'weight_week_online_days': sysconfig.weight_week_online_days,
+    u'weight_app_network': sysconfig.weight_app_network,
+    u'weight_simulator': sysconfig.weight_simulator,
     u'weight_day_avg_online_time': sysconfig.weight_day_avg_online_time,
     u'threshold_days': sysconfig.THRESHOLD_DAYS
 }
@@ -221,20 +223,32 @@ def calculate_score(x):
         total_online_time_ratio = 1
     score_total_online_time = total_online_time_ratio * 100
 
+    score_app_network = 50
+    if x.app_network is not None and x.app_network == 'wlan':
+        score_app_network = 100
+
+    score_simulator = 100
+    if x.simulator is not None and x.simulator == 1:
+        score_simulator = 0
+
     score = score_day_avg_online_time * config['weight_day_avg_online_time'] + \
             score_sum_online_time_window * config['weight_week_online_time_total'] + \
             score_sum_online_days_window * config['weight_week_online_days'] + \
             score_day_avg_access_count * config['weight_day_avg_access_count'] + \
             score_access_count_window * config['weight_week_access_count'] + \
             score_target_port_num * config['weight_target_port_num'] + \
-            score_total_online_time * config['weight_online_time_total']
+            score_total_online_time * config['weight_online_time_total'] + \
+            score_app_network * config['weight_app_network'] + score_simulator * config['weight_simulator']
+
     total_score = 100.0 * (config['weight_day_avg_access_count'] + config['weight_week_online_time_total'] + config['weight_week_online_days'] +\
-            config['weight_day_avg_access_count'] + config['weight_week_access_count'] + config['weight_target_port_num'] + config['weight_online_time_total'])
-    score = round((score / total_score) * 100, 2)
+            config['weight_day_avg_access_count'] + config['weight_week_access_count'] + config['weight_target_port_num'] + config['weight_online_time_total'] +\
+            config['weight_app_network'] + config['weight_simulator'])
+
+    result = round((score / total_score) * 100, 2)
 
     target_port_num = 0
     return x.fingerprint, x.accesskey, x.timestamp, target_port_num, x.target_port_total,\
-            x.total_online_time, x.total_online_days, online_time_window, online_days_window, access_count_window, score
+            x.total_online_time, x.total_online_days, online_time_window, online_days_window, access_count_window, result
 
 class UserActivity():
     def __init__(self, date_list):
@@ -256,7 +270,7 @@ class UserActivity():
                 target_port_total = self.portNum[accesskey]
             else:
                 continue
-            current_records.append(Record(record['fingerprint'], record['accesskey'], record['timestamp'],\
+            current_records.append(Record(record['fingerprint'], record['accesskey'], record['timestamp'], record['app_network'], record['simulator'],\
                     record['target_port_num'], target_port_total, day_online_time, 1, [day_online_time], [1], [record['day_access_count']], 0.0))
 
         current_df = slc.createDataFrame(current_records)
@@ -291,14 +305,15 @@ class UserActivity():
                 F.first('target_port_total').alias('target_port_total'), F.sum('total_online_time').alias('total_online_time'),\
                 F.sum('total_online_days').alias('total_online_days'), F.collect_list('online_time_window').alias('online_time_window'),\
                 F.collect_list('online_days_window').alias('online_days_window'), F.collect_list('access_count_window').alias('access_count_window'),\
-                F.max('score').alias('score'))\
+                F.max('score').alias('score'), F.max('simulator').alias('simulator'), F.first('app_network').alias('app_network'))\
                 .select('fingerprint', 'accesskey', 'timestamp', 'target_port_num', 'target_port_total', 'total_online_time', 'total_online_days',\
                 flattenFloatArrayUDF('online_time_window').alias('online_time_window'), flattenIntArrayUDF('online_days_window').alias('online_days_window'),\
                 flattenIntArrayUDF('access_count_window').alias('access_count_window'), 'score')
         score_df = fpgrouped.rdd.map(calculate_score).toDF(ColumnName)
-        score_df.write.mode('overwrite').parquet(sysconfig.HDFS_DIR)
-        score_df.foreach(save_records)
-        #print(score_df.show(10))
+        #score_df.write.mode('overwrite').parquet(sysconfig.HDFS_DIR)
+        #score_df.foreach(save_records)
+        print(score_df.show(1))
+        return
 
     def run(self):
         self.scores = {}
@@ -316,11 +331,13 @@ class UserActivity():
             start = time.time()
             try:
                 df = slc.read.parquet("hdfs://172.16.100.28:9000/warehouse/hive/yundun.db/tjkd_app_ext/dt={}".format(day))
-                df = df.groupBy('fingerprint').agg({"session_time": "sum", "target_port": "approx_count_distinct",\
-                        "fingerprint": "count", "accesskey":"first", "Timestamp":"first"})\
-                        .withColumnRenamed("sum(session_time)", "day_online_time").withColumnRenamed("count(fingerprint)", "day_access_count")\
-                        .withColumnRenamed("first(accesskey)", "accesskey").withColumnRenamed("first(Timestamp)", "timestamp")\
-                        .withColumnRenamed("approx_count_distinct(target_port)", "target_port_num")
+                df = df.groupBy('fingerprint').agg({'session_time':'sum', 'target_port':'approx_count_distinct',\
+                        'fingerprint':'count', 'accesskey':'first', 'Timestamp':'first', 'simulator':'max', 'app_network':'first'})\
+                        .withColumnRenamed('sum(session_time)', 'day_online_time').withColumnRenamed('count(fingerprint)', 'day_access_count')\
+                        .withColumnRenamed('first(accesskey)', 'accesskey').withColumnRenamed('first(Timestamp)', 'timestamp')\
+                        .withColumnRenamed('approx_count_distinct(target_port)', 'target_port_num').withColumnRenamed('max(simulator)', 'simulator')\
+                        .withColumnRenamed('first(app_network)', 'app_network')
+
             except Exception, e:
                 logger.error('%s request hdfs failed, err msg:%s' % (day, str(e)))
                 continue 

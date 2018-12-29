@@ -188,14 +188,14 @@
                     score_day_avg_access_count * weight_day_avg_access_count +
                     score_week_access_count * weight_week_access_count +
                     score_target_port_num * weight_target_port_num   
-        ```     
-    
+        ```   
+
 
 ### 系统dependencies
         
     * java >= 1.8.0
     * python >= 2.7
-    * spark   
+    * spark-2.3.1, 线上spark集群的spark版本为1.6.2, 两者不兼容
  
     * pip install redis
 

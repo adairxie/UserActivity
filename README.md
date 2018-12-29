@@ -191,10 +191,12 @@
         ```   
 
 
-### 系统dependencies
+* **系统dependencies**
         
-    * java >= 1.8.0
+    * java >= 1.8.0   
+
     * python >= 2.7
+
     * spark-2.3.1, 线上spark集群的spark版本为1.6.2, 两者不兼容
  
     * pip install redis
@@ -206,6 +208,8 @@
     * pip install findspark
 
     * pip install config
-### 系统流程图
+
+
+* **系统流程图**
     
 ![Alt-Text](https://note.youdao.com/yws/api/personal/file/2F79EFF04613414E85C9C9612C52BDEC?method=download&shareKey=994f84a501b6832ac055de2eb14e6dda)

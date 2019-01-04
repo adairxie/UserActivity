@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     sched = BlockingScheduler()
     # start program in am is best.
-    sched.add_job(timer_job, "interval", hours=20)
+    sched.add_job(timer_job, 'cron', hour=5)
 
     try:
         sched.start()
